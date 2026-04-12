@@ -1,0 +1,44 @@
+{% extends "monitoramento/funcionario_base.html" %}
+
+{% block title %}App - Resultados{% endblock %}
+{% block worker_title %}Resultados{% endblock %}
+{% block worker_subtitle %}Resumo mensal das suas entregas e metas{% endblock %}
+
+{% block worker_content %}
+<section class="worker-card">
+    <div class="worker-card-header">
+        <h2>Novembro</h2>
+        <span>Mensal</span>
+    </div>
+    <div class="worker-result-box">
+        <small>Geral</small>
+        <strong>{{ resultado_percentual }}%</strong>
+    </div>
+    <div class="worker-result-box">
+        <small>Meta total</small>
+        <strong>{{ resultado_meta_total }}</strong>
+    </div>
+    <div class="worker-result-box">
+        <small>Realizado</small>
+        <strong>{{ resultado_realizado_total }}</strong>
+    </div>
+</section>
+
+<section class="worker-card">
+    <div class="worker-card-header">
+        <h2>Por Meta</h2>
+        <span>{{ tarefas_funcionario.count }} itens</span>
+    </div>
+    <div class="worker-task-list">
+        {% for tarefa in tarefas_funcionario %}
+            <article class="worker-task-item">
+                <strong>{{ tarefa.titulo }}</strong>
+                <span>{{ tarefa.acao.nome }}</span>
+                <small>Meta {{ tarefa.meta_quantidade }} | Realizado {{ tarefa.realizado_total }}</small>
+            </article>
+        {% empty %}
+            <p class="table-note">Nenhum resultado disponivel.</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

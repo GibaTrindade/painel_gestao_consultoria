@@ -1,0 +1,28 @@
+{% extends "monitoramento/funcionario_base.html" %}
+
+{% block title %}App - Alertas{% endblock %}
+{% block worker_title %}Alertas{% endblock %}
+{% block worker_subtitle %}Itens pendentes, atrasados ou que exigem atencao{% endblock %}
+
+{% block worker_content %}
+<section class="worker-card">
+    <div class="worker-card-header">
+        <h2>Novos Alertas</h2>
+        <span>{{ alertas_tarefas|length }} itens</span>
+    </div>
+    <div class="worker-task-list">
+        {% for tipo, tarefa in alertas_tarefas %}
+            <article class="worker-alert-item">
+                <strong>{% if tipo == 'atrasada' %}Atenção{% else %}Lembrete{% endif %}</strong>
+                <span>{{ tarefa.titulo }}</span>
+                <small>
+                    Meta {{ tarefa.meta_quantidade }} | Realizado {{ tarefa.realizado_total }}
+                    {% if tarefa.prazo %}| Prazo {{ tarefa.prazo|date:"d/m/Y" }}{% endif %}
+                </small>
+            </article>
+        {% empty %}
+            <p class="table-note">Nenhum alerta para hoje.</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+
+{% block title %}Acoes | Monitoramento{% endblock %}
+{% block page_section %}Plano de Acao{% endblock %}
+{% block page_title %}Acoes de Melhoria{% endblock %}
+{% block page_subtitle %}Plano de acao vinculado aos indicadores com metas mensais, atribuicoes e status de execucao{% endblock %}
+
+{% block content %}
+<section class="filter-panel">
+    <form method="get" class="filters-inline">
+        {% if perfil_tipo == 'admin' and cliente_atual %}
+            <input type="hidden" name="cliente" value="{{ cliente_atual.id }}">
+        {% endif %}
+        <select name="diagnostico" onchange="this.form.submit()">
+            {% for item in diagnosticos %}
+                <option value="{{ item.id }}" {% if diagnostico_selecionado and item.id == diagnostico_selecionado.id %}selected{% endif %}>{{ item.titulo }}</option>
+            {% endfor %}
+        </select>
+        <select name="indicador" onchange="this.form.submit()">
+            {% for item in indicadores %}
+                <option value="{{ item.id }}" {% if indicador_selecionado and item.id == indicador_selecionado.id %}selected{% endif %}>{{ item.nome }}</option>
+            {% endfor %}
+        </select>
+    </form>
+</section>
+
+{% if indicador_selecionado %}
+<section class="stats-grid compact">
+    <article class="stat-card">
+        <span>Valor Atual do Indicador</span>
+        <strong>{{ indicador_selecionado.valor_atual }}</strong>
+        <small>{{ indicador_selecionado.unidade }}</small>
+    </article>
+    <article class="stat-card">
+        <span>Meta Definida para o Indicador</span>
+        <strong>{{ indicador_selecionado.meta_valor }}</strong>
+        <small>{{ indicador_selecionado.unidade }}</small>
+    </article>
+</section>
+{% endif %}
+
+<section class="panel">
+    <div class="panel-header">
+        <h3>Acoes de Melhoria Cadastradas</h3>
+        <div class="panel-actions">
+            <span>{{ acoes.count }} registros</span>
+            <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}modal=nova_acao">Nova Acao</a>
+        </div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Meta mensal</th>
+                <th>Realizado</th>
+                <th>Responsavel</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for acao in acoes %}
+                <tr>
+                    <td>{{ acao.nome }}</td>
+                    <td>{{ acao.meta_mensal }}</td>
+                    <td>{{ acao.percentual_realizado|floatformat:0 }}%</td>
+                    <td>
+                        {% if acao.responsavel %}
+                            {{ acao.responsavel.get_full_name|default:acao.responsavel.username }}
+                        {% else %}
+                            Nao definido
+                        {% endif %}
+                    </td>
+                    <td><span class="tag {% if acao.status == 'ativa' %}success{% elif acao.status == 'concluida' %}info{% else %}danger{% endif %}">{{ acao.get_status_display }}</span></td>
+                    <td><a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}acao={{ acao.id }}&modal=atribuir_acao">Adicionar profissional</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="6">Nenhuma acao encontrada.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+{% if modal == 'nova_acao' %}
+<section class="modal-backdrop">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Nova Acao</h3>
+            <a href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}{% endif %}" class="modal-close">×</a>
+        </div>
+        <form method="post" class="modal-form" id="assignment-modal-form" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="form_name" value="nova_acao">
+            <div class="form-row single">{{ acao_form.nome.label_tag }} {{ acao_form.nome }}</div>
+            <div class="form-grid">
+                <div>{{ acao_form.meta_mensal.label_tag }} {{ acao_form.meta_mensal }}</div>
+                <div>{{ acao_form.status.label_tag }} {{ acao_form.status }}</div>
+            </div>
+            <div class="modal-actions">
+                <a class="ghost-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}{% endif %}">Cancelar</a>
+                <button type="submit" class="primary-btn" formnovalidate>Confirmar</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endif %}
+
+{% if modal == 'atribuir_acao' and acao_alvo_modal %}
+<section class="modal-backdrop">
+    <div class="modal-card modal-wide">
+        <div class="modal-header">
+            <h3>Adicionar Profissional a Acao</h3>
+            <a href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}{% endif %}" class="modal-close">×</a>
+        </div>
+        <form method="post" class="modal-form" id="assignment-modal-form" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="form_name" value="confirmar_atribuicoes">
+            <input type="hidden" name="acao_id" value="{{ acao_alvo_modal.id }}">
+            <input type="hidden" name="pending_assignments" id="pending-assignments-input" value="[]">
+            <div class="assignment-head">
+                <span><strong>Acao:</strong> {{ acao_alvo_modal.nome }}</span>
+                <span><strong>Valor:</strong> {{ acao_alvo_modal.meta_mensal }}</span>
+            </div>
+            <div class="table-note">A soma dos valores mensais dos vinculos ativos nao pode ultrapassar o valor mensal da acao.</div>
+            <div class="radio-row assignment-type-box">{{ atribuicao_form.tipo_destino }}</div>
+            <div class="form-grid">
+                <div id="profissional-field">{{ atribuicao_form.profissional.label_tag }} {{ atribuicao_form.profissional }}</div>
+                <div id="equipe-field">{{ atribuicao_form.equipe_destino.label_tag }} {{ atribuicao_form.equipe_destino }}</div>
+            </div>
+            <div class="form-grid">
+                <div>{{ atribuicao_form.valor_mensal.label_tag }} {{ atribuicao_form.valor_mensal }}</div>
+                <div class="checkbox-field">{{ atribuicao_form.ativo }} <label for="{{ atribuicao_form.ativo.id_for_label }}">Ativo</label></div>
+            </div>
+            <div id="assignment-inline-feedback" class="alert assignment-feedback" style="display: none;"></div>
+            {% if atribuicao_form.errors %}
+                <div class="alert">Revise os campos do formulario antes de adicionar a atribuicao.</div>
+            {% endif %}
+            <div class="assignment-toolbar">
+                <button type="button" class="ghost-btn assignment-add-btn" id="add-assignment-btn">Adicionar Profissional</button>
+            </div>
+            <table class="compact-table">
+                <thead>
+                    <tr>
+                        <th>Profissionais / Equipes</th>
+                        <th>Valor Mensal</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="assignment-table-body">
+                    {% for atribuicao in atribuicoes_acao %}
+                        <tr data-existing-key="{% if atribuicao.funcionario %}funcionario:{{ atribuicao.funcionario.id }}{% else %}equipe:{{ atribuicao.equipe.id }}{% endif %}" data-existing-value="{{ atribuicao.valor_mensal }}" data-existing-active="{% if atribuicao.ativo %}true{% else %}false{% endif %}">
+                            <td>{% if atribuicao.funcionario %}{{ atribuicao.funcionario }}{% else %}{{ atribuicao.equipe.nome }}{% endif %}</td>
+                            <td>{{ atribuicao.valor_mensal }}</td>
+                            <td><span class="tag {% if atribuicao.ativo %}success{% else %}danger{% endif %}">{% if atribuicao.ativo %}Ativo{% else %}Desativado{% endif %}</span></td>
+                            <td></td>
+                        </tr>
+                    {% empty %}
+                        <tr id="assignment-empty-row"><td colspan="4">Nenhuma atribuicao cadastrada.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="modal-actions">
+                <a class="ghost-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}{% endif %}">Cancelar</a>
+                <button type="button" class="primary-btn" id="confirm-assignments-btn">Confirmar</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endif %}
+
+{% if modal == 'atribuir_acao' and acao_alvo_modal %}
+<script>
+    (() => {
+        const tipoInputs = document.querySelectorAll('input[name="tipo_destino"]');
+        const profissionalField = document.getElementById('profissional-field');
+        const equipeField = document.getElementById('equipe-field');
+        const addButton = document.getElementById('add-assignment-btn');
+        const confirmButton = document.getElementById('confirm-assignments-btn');
+        const assignmentForm = document.getElementById('assignment-modal-form');
+        const pendingInput = document.getElementById('pending-assignments-input');
+        const assignmentTableBody = document.getElementById('assignment-table-body');
+        const feedbackBox = document.getElementById('assignment-inline-feedback');
+        const profissionalSelect = document.getElementById('{{ atribuicao_form.profissional.id_for_label }}');
+        const equipeSelect = document.getElementById('{{ atribuicao_form.equipe_destino.id_for_label }}');
+        const valorMensalInput = document.getElementById('{{ atribuicao_form.valor_mensal.id_for_label }}');
+        const ativoInput = document.getElementById('{{ atribuicao_form.ativo.id_for_label }}');
+        const acaoMetaMensal = parseFloat('{{ acao_alvo_modal.meta_mensal|default:0 }}'.replace(',', '.')) || 0;
+        let pendingAssignments = [];
+
+        if (!tipoInputs.length || !profissionalField || !equipeField || !addButton || !confirmButton || !assignmentForm || !pendingInput || !assignmentTableBody || !feedbackBox) {
+            return;
+        }
+
+        const showFeedback = (message) => {
+            feedbackBox.textContent = message;
+            feedbackBox.style.display = 'block';
+        };
+
+        const clearFeedback = () => {
+            feedbackBox.textContent = '';
+            feedbackBox.style.display = 'none';
+        };
+
+        const syncPendingInput = () => {
+            pendingInput.value = JSON.stringify(pendingAssignments);
+        };
+
+        const getExistingAllocations = () => {
+            const allocations = {};
+            assignmentTableBody.querySelectorAll('tr[data-existing-key]').forEach((row) => {
+                allocations[row.dataset.existingKey] = row.dataset.existingActive === 'true'
+                    ? (parseFloat(row.dataset.existingValue.replace(',', '.')) || 0)
+                    : 0;
+            });
+            return allocations;
+        };
+
+        const getProjectedTotal = () => {
+            const allocations = getExistingAllocations();
+            pendingAssignments.forEach((item) => {
+                const key = `${item.tipo_destino}:${item.tipo_destino === 'funcionario' ? item.profissional : item.equipe_destino}`;
+                allocations[key] = item.ativo ? (parseFloat(item.valor_mensal) || 0) : 0;
+            });
+            return Object.values(allocations).reduce((total, value) => total + value, 0);
+        };
+
+        const getEmptyRow = () => document.getElementById('assignment-empty-row');
+
+        const removeEmptyRowIfNeeded = () => {
+            const emptyRow = getEmptyRow();
+            if (emptyRow) {
+                emptyRow.remove();
+            }
+        };
+
+        const ensureEmptyRowIfNeeded = () => {
+            const hasVisibleRows = assignmentTableBody.querySelectorAll('tr').length > 0;
+            if (!hasVisibleRows) {
+                const row = document.createElement('tr');
+                row.id = 'assignment-empty-row';
+                row.innerHTML = '<td colspan="4">Nenhuma atribuicao cadastrada.</td>';
+                assignmentTableBody.appendChild(row);
+            }
+        };
+
+        const renderPendingRow = (item, index) => {
+            removeEmptyRowIfNeeded();
+            const row = document.createElement('tr');
+            row.dataset.pendingIndex = index;
+            row.innerHTML = `
+                <td>${item.nome_exibicao}</td>
+                <td>${item.valor_mensal}</td>
+                <td><span class="tag ${item.ativo ? 'success' : 'danger'}">${item.ativo ? 'Ativo' : 'Desativado'}</span></td>
+                <td><button type="button" class="ghost-chip remove-assignment-btn">Remover</button></td>
+            `;
+            assignmentTableBody.appendChild(row);
+        };
+
+        const rebuildPendingRows = () => {
+            assignmentTableBody.querySelectorAll('tr[data-pending-index]').forEach((row) => row.remove());
+            pendingAssignments.forEach((item, index) => renderPendingRow(item, index));
+            ensureEmptyRowIfNeeded();
+            syncPendingInput();
+        };
+
+        const updateDestinoFields = () => {
+            const selected = document.querySelector('input[name="tipo_destino"]:checked');
+            const tipo = selected ? selected.value : 'funcionario';
+            profissionalField.style.display = tipo === 'funcionario' ? 'block' : 'none';
+            equipeField.style.display = tipo === 'equipe' ? 'block' : 'none';
+        };
+
+        tipoInputs.forEach((input) => input.addEventListener('change', updateDestinoFields));
+        addButton.addEventListener('click', () => {
+            clearFeedback();
+            const selected = document.querySelector('input[name="tipo_destino"]:checked');
+            const tipo = selected ? selected.value : 'funcionario';
+            const isFuncionario = tipo === 'funcionario';
+            const targetSelect = isFuncionario ? profissionalSelect : equipeSelect;
+
+            if (!targetSelect || !targetSelect.value) {
+                showFeedback(isFuncionario ? 'Selecione um profissional antes de adicionar.' : 'Selecione uma equipe antes de adicionar.');
+                return;
+            }
+
+            if (!valorMensalInput || !valorMensalInput.value) {
+                showFeedback('Informe o valor mensal antes de adicionar.');
+                return;
+            }
+
+            const selectedOption = targetSelect.options[targetSelect.selectedIndex];
+            const item = {
+                tipo_destino: tipo,
+                profissional: isFuncionario ? targetSelect.value : '',
+                equipe_destino: isFuncionario ? '' : targetSelect.value,
+                key: `${tipo}:${targetSelect.value}`,
+                nome_exibicao: selectedOption.text,
+                valor_mensal: valorMensalInput.value,
+                ativo: Boolean(ativoInput && ativoInput.checked),
+            };
+
+            const existsInSavedRows = Boolean(assignmentTableBody.querySelector(`tr[data-existing-key="${item.key}"]`));
+            if (existsInSavedRows) {
+                showFeedback('Esse vinculo ja existe na acao. Edite o valor ou desative o vinculo existente antes de adicionar outro.');
+                return;
+            }
+
+            const duplicate = pendingAssignments.some((entry) =>
+                entry.tipo_destino === item.tipo_destino &&
+                entry.profissional === item.profissional &&
+                entry.equipe_destino === item.equipe_destino
+            );
+
+            if (duplicate) {
+                showFeedback('Esse item ja foi adicionado na lista pendente.');
+                return;
+            }
+
+            pendingAssignments.push(item);
+            if (getProjectedTotal() > acaoMetaMensal) {
+                pendingAssignments.pop();
+                showFeedback(`A soma dos valores mensais nao pode ultrapassar ${acaoMetaMensal}.`);
+                return;
+            }
+            rebuildPendingRows();
+            targetSelect.value = '';
+            valorMensalInput.value = '';
+            if (ativoInput) {
+                ativoInput.checked = true;
+            }
+            clearFeedback();
+        });
+
+        assignmentTableBody.addEventListener('click', (event) => {
+            const button = event.target.closest('.remove-assignment-btn');
+            if (!button) {
+                return;
+            }
+
+            const row = button.closest('tr[data-pending-index]');
+            if (!row) {
+                return;
+            }
+
+            const index = Number(row.dataset.pendingIndex);
+            pendingAssignments = pendingAssignments.filter((_, currentIndex) => currentIndex !== index);
+            rebuildPendingRows();
+        });
+
+        confirmButton.addEventListener('click', () => {
+            clearFeedback();
+            if (!pendingAssignments.length) {
+                showFeedback('Adicione ao menos um profissional ou equipe antes de confirmar.');
+                return;
+            }
+            if (getProjectedTotal() > acaoMetaMensal) {
+                showFeedback(`A soma dos valores mensais nao pode ultrapassar ${acaoMetaMensal}.`);
+                return;
+            }
+            syncPendingInput();
+            assignmentForm.submit();
+        });
+
+        updateDestinoFields();
+        rebuildPendingRows();
+    })();
+</script>
+{% endif %}
+{% endblock %}

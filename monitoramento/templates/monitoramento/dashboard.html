@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% load static l10n %}
+
+{% block title %}Dashboard | Monitoramento{% endblock %}
+{% block page_section %}Visao Executiva{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Navegue entre indicadores, filtre a competencia desejada e acompanhe as tarefas ativas por profissional{% endblock %}
+
+{% block content %}
+<section class="dashboard-toolbar filter-panel">
+    <div>
+        <p class="overline">Competencia em analise</p>
+        <h3>{{ competencia_label }}</h3>
+        <p class="subtitle-inline">
+            {% if indicador_selecionado %}
+                Indicador em foco: {{ indicador_selecionado.nome }}
+            {% else %}
+                Cadastre um indicador para iniciar a leitura executiva.
+            {% endif %}
+        </p>
+    </div>
+    <form method="get" class="dashboard-filter-form">
+        {% if cliente_atual %}
+            <input type="hidden" name="cliente" value="{{ cliente_atual.id }}">
+        {% endif %}
+        {% if indicador_selecionado %}
+            <input type="hidden" name="indicador" value="{{ indicador_selecionado.id }}">
+        {% endif %}
+        {% if funcionario_selecionado %}
+            <input type="hidden" name="funcionario" value="{{ funcionario_selecionado.funcionario.id }}">
+        {% endif %}
+        <input type="hidden" name="competencia" value="{{ competencia_input }}" data-dashboard-month-input>
+        <div class="month-switcher" data-month-switcher>
+            <button type="button" class="month-arrow" data-month-target="{{ competencia_anterior_input }}" aria-label="Mes anterior">&larr;</button>
+            <span class="month-switcher-label">{{ competencia_nome }}</span>
+            <button type="button" class="month-arrow" data-month-target="{{ competencia_proxima_input }}" aria-label="Proximo mes">&rarr;</button>
+        </div>
+    </form>
+</section>
+
+<section class="indicator-strip dashboard-indicators">
+    {% for indicador in indicadores_cards %}
+        <a
+            href="?{% if cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}competencia={{ competencia_input }}&indicador={{ indicador.id }}{% if funcionario_selecionado %}&funcionario={{ funcionario_selecionado.funcionario.id }}{% endif %}"
+            class="indicator-pill indicator-link {% if indicador.selecionado %}is-selected{% endif %}"
+        >
+            <span>{{ indicador.nome }}</span>
+            <strong>{{ indicador.percentual|floatformat:0 }}%</strong>
+            <small>{{ indicador.valor|floatformat:2 }} / {{ indicador.meta|floatformat:2 }}</small>
+        </a>
+    {% empty %}
+        <article class="empty-card">Cadastre diagnosticos e indicadores para visualizar o painel.</article>
+    {% endfor %}
+</section>
+
+<section class="dashboard-gauge-grid dashboard-metrics">
+    {% for gauge in gauges_data %}
+        <article class="chart-card neon-chart-card gauge-card">
+            <div class="panel-header">
+                <h3>{{ gauge.titulo }}</h3>
+                <span>{{ gauge.percentual|floatformat:0 }}%</span>
+            </div>
+            <p class="chart-intro">{{ gauge.subtitulo }}</p>
+            <div class="gauge-shell">
+                <div
+                    class="gauge-canvas"
+                    data-gauge-chart
+                    data-percent="{{ gauge.percentual|unlocalize }}"
+                    data-color="{{ gauge.cor }}"
+                    data-title="{{ gauge.titulo }}"
+                ></div>
+                <div class="gauge-center">
+                    <strong>{{ gauge.percentual|floatformat:0 }}%</strong>
+                    <span>na competencia</span>
+                </div>
+            </div>
+            <div class="gauge-meta">
+                <span><i class="legend-swatch {% if gauge.id == 'acoes' %}neon-green{% else %}neon-pink{% endif %}"></i>Atual {{ gauge.valor_label }}</span>
+                <span>Meta {{ gauge.meta_label }}</span>
+            </div>
+        </article>
+    {% endfor %}
+</section>
+
+<section class="panel-grid dashboard-panels">
+    <article class="panel">
+        <div class="panel-header">
+            <h3>Acoes Ativas do Indicador</h3>
+            <span>{{ acoes_lista|length }} registros</span>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Descricao</th>
+                    <th>Meta mensal</th>
+                    <th>Realizado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for acao in acoes_lista %}
+                    <tr>
+                        <td>{{ acao.nome }}</td>
+                        <td>{{ acao.meta_mensal|floatformat:2 }}</td>
+                        <td class="{% if acao.percentual_realizado < 50 %}text-danger{% elif acao.percentual_realizado < 100 %}text-warning{% else %}text-success{% endif %}">
+                            {{ acao.percentual_realizado|floatformat:0 }}%
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="3">Nenhuma acao vinculada ao indicador selecionado.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h3>Profissionais no Indicador Selecionado</h3>
+            <span>{{ profissionais_lista|length }} profissionais</span>
+        </div>
+        <p class="table-note">O percentual considera apenas as tarefas ligadas ao indicador atualmente selecionado no topo do dashboard.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Realizado</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in profissionais_lista %}
+                    <tr class="{% if item.selecionado %}row-selected{% endif %}">
+                        <td>{{ item.funcionario.user.get_full_name|default:item.funcionario.user.username }}</td>
+                        <td class="{% if item.percentual_realizado < 50 %}text-danger{% elif item.percentual_realizado < 100 %}text-warning{% else %}text-success{% endif %}">
+                            {{ item.percentual_realizado|floatformat:0 }}%
+                        </td>
+                        <td class="table-action-cell">
+                            <button
+                                type="button"
+                                class="soft-btn"
+                                data-open-worker-modal
+                                data-funcionario-id="{{ item.funcionario.id }}"
+                            >
+                                Tarefas
+                            </button>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="3">Nenhum profissional com tarefas nesse indicador.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+</section>
+
+<section class="dashboard-chart-grid">
+    <article class="chart-card neon-chart-card">
+        <div class="panel-header">
+            <h3>Curva Mensal de Acoes x Indicador</h3>
+            <span>{{ competencia_label }}</span>
+        </div>
+        <p class="chart-intro">Passe o mouse pelos pontos para comparar a resposta operacional com a performance do indicador.</p>
+        <div class="line-chart-shell">
+            <canvas
+                class="line-chart-canvas"
+                data-line-chart
+                data-chart-title="Acoes x Indicador"
+                data-source-id="dashboard-comparativo-data"
+                data-lines='[{"key":"acoes","label":"Acoes","color":"#7CFFB2"},{"key":"indicador","label":"Indicador","color":"#FF4FD8"}]'
+            ></canvas>
+        </div>
+        <div class="mini-chart-legend neon-legend">
+            <span><i class="legend-swatch neon-green"></i>Acoes</span>
+            <span><i class="legend-swatch neon-pink"></i>Indicador</span>
+        </div>
+    </article>
+
+    <article class="chart-card neon-chart-card">
+        <div class="panel-header">
+            <h3>Ritmo dos Profissionais</h3>
+            <span>{{ profissionais_lista|length }} profissionais mapeados</span>
+        </div>
+        <p class="chart-intro">Leitura de entrega das pessoas mais expostas ao indicador selecionado.</p>
+        <div class="line-chart-shell">
+            <canvas
+                class="line-chart-canvas"
+                data-line-chart
+                data-chart-title="Profissionais"
+                data-source-id="dashboard-profissionais-data"
+                data-lines='[{"key":"realizado","label":"Realizado","color":"#39D5FF"},{"key":"meta","label":"Meta de referencia","color":"#B6FF3B"}]'
+            ></canvas>
+        </div>
+        <div class="mini-chart-legend neon-legend">
+            <span><i class="legend-swatch neon-cyan"></i>Realizado</span>
+            <span><i class="legend-swatch neon-lime"></i>Meta</span>
+        </div>
+    </article>
+</section>
+
+<section class="modal-backdrop dashboard-worker-modal" data-worker-modal hidden>
+    <div class="modal-card modal-wide worker-task-modal-card">
+        <div class="modal-header">
+            <div>
+                <h3 data-worker-modal-title>Tarefas Ativas do Profissional</h3>
+                <p class="subtitle-inline" data-worker-modal-subtitle>Selecione um profissional para visualizar os detalhes.</p>
+            </div>
+            <button type="button" class="modal-close modal-close-btn" data-close-worker-modal>&times;</button>
+        </div>
+        <div class="worker-task-summary" data-worker-modal-summary></div>
+        <div class="worker-task-list" data-worker-modal-body></div>
+        <div class="modal-actions">
+            <button type="button" class="ghost-btn" data-close-worker-modal>Fechar</button>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ comparativo_series|json_script:"dashboard-comparativo-data" }}
+{{ profissionais_series|json_script:"dashboard-profissionais-data" }}
+{{ profissionais_modal_data|json_script:"dashboard-profissionais-modal-data" }}
+{{ gauges_data|json_script:"dashboard-gauges-data" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

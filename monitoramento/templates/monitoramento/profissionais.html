@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Profissionais | Monitoramento{% endblock %}
+{% block page_section %}Quadro de Profissionais{% endblock %}
+{% block page_title %}Profissionais{% endblock %}
+{% block page_subtitle %}Acompanhamento individual da execucao, alocacao em equipes e volume de producao informado{% endblock %}
+
+{% block content %}
+<section class="filter-panel">
+    <form method="get" class="search-inline">
+        {% if perfil_tipo == 'admin' and cliente_atual %}
+            <input type="hidden" name="cliente" value="{{ cliente_atual.id }}">
+        {% endif %}
+        <input type="text" name="q" value="{{ termo_busca }}" placeholder="Pesquisar profissional">
+        <button type="submit" class="ghost-btn">Buscar</button>
+    </form>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h3>Profissionais Cadastrados</h3>
+        <span>{{ profissionais.count }} registros</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Equipe</th>
+                <th>Dias</th>
+                <th>Producoes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for profissional in profissionais %}
+                <tr>
+                    <td>{{ profissional.user.get_full_name|default:profissional.user.username }}</td>
+                    <td>{{ profissional.equipe.nome|default:"Sem equipe" }}</td>
+                    <td>{{ profissional.dias_trabalho|default:"-" }}</td>
+                    <td>{{ profissional.registros.count }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4">Nenhum profissional encontrado.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

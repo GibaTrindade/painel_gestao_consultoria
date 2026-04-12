@@ -1,0 +1,46 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entrar | Monitoramento de Metas</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body class="login-page">
+    <section class="login-card">
+        <div class="brand login-brand">
+            <div class="brand-mark">SMR</div>
+            <div>
+                <h1>Monitoramento de Metas</h1>
+                <p>Painel para consultoria, clientes e profissionais</p>
+            </div>
+        </div>
+
+        <form method="post" class="login-form">
+            {% csrf_token %}
+            <h2>Acessar plataforma</h2>
+            <div class="organization-badge">
+                {% if master_access %}
+                    <strong>Acesso mestre</strong>
+                    <span>{{ selected_code }}</span>
+                {% elif selected_cliente %}
+                    <strong>{{ selected_cliente.nome }}</strong>
+                    <span>Codigo: {{ selected_code }}</span>
+                {% else %}
+                    <strong>Organizacao nao selecionada</strong>
+                {% endif %}
+            </div>
+            {% if form.errors %}
+                <div class="alert">Nao foi possivel autenticar nesse contexto.</div>
+            {% endif %}
+            {{ form.username.label_tag }}
+            {{ form.username }}
+            {{ form.password.label_tag }}
+            {{ form.password }}
+            <button type="submit" class="primary-btn full-width">Entrar</button>
+            <a href="{% url 'select-organization' %}" class="ghost-btn full-width center-text">Trocar organizacao</a>
+        </form>
+    </section>
+</body>
+</html>

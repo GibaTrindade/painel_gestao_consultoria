@@ -1,0 +1,32 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codigo da Organizacao | Monitoramento de Metas</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body class="login-page">
+    <section class="login-card">
+        <div class="brand login-brand">
+            <div class="brand-mark">SMR</div>
+            <div>
+                <h1>Monitoramento de Metas</h1>
+                <p>Entre pelo codigo da sua organizacao antes do login</p>
+            </div>
+        </div>
+
+        <form method="post" class="login-form">
+            {% csrf_token %}
+            <h2>Identifique sua organizacao</h2>
+            {% if form.errors %}
+                <div class="alert">Nao encontramos esse codigo de organizacao.</div>
+            {% endif %}
+            {{ form.codigo.label_tag }}
+            {{ form.codigo }}
+            <button type="submit" class="primary-btn full-width">Continuar</button>
+        </form>
+    </section>
+</body>
+</html>

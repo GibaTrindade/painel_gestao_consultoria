@@ -1,0 +1,85 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Monitoramento de Metas{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div>
+                <div class="brand">
+                    <div class="brand-mark">SMR</div>
+                    <div>
+                        <h1>Painel Operacional</h1>
+                        <p>Metas, diagnosticos e produtividade</p>
+                    </div>
+                </div>
+
+                <div class="client-chip">
+                    {% if cliente_atual %}
+                        {{ cliente_atual.nome }}
+                    {% else %}
+                        Nenhum cliente vinculado
+                    {% endif %}
+                </div>
+
+                <nav class="nav-links">
+                    <a href="{% url 'dashboard' %}" class="{% if pagina == 'dashboard' %}active{% endif %}">Dashboard</a>
+                    <a href="{% url 'diagnosticos' %}" class="{% if pagina == 'diagnosticos' %}active{% endif %}">Diagnosticos</a>
+                    <a href="{% url 'indicadores' %}" class="{% if pagina == 'indicadores' %}active{% endif %}">Indicadores</a>
+                    <a href="{% url 'acoes' %}" class="{% if pagina == 'acoes' %}active{% endif %}">Acoes</a>
+                    <a href="{% url 'equipes' %}" class="{% if pagina == 'equipes' %}active{% endif %}">Equipes</a>
+                    <a href="{% url 'profissionais' %}" class="{% if pagina == 'profissionais' %}active{% endif %}">Profissionais</a>
+                </nav>
+            </div>
+
+            <div class="sidebar-footer">
+                <p>{{ request.user.get_full_name|default:request.user.username }}</p>
+                <span>{{ perfil_tipo|title }}</span>
+            </div>
+        </aside>
+
+        <main class="content-area">
+            <header class="topbar">
+                <div>
+                    <p class="page-section-title">{% block page_section %}Ambiente de Monitoramento{% endblock %}</p>
+                    <h2>{% block page_title %}Painel{% endblock %}</h2>
+                    <p class="subtitle">{% block page_subtitle %}Acompanhamento de desempenho e gargalos{% endblock %}</p>
+                </div>
+
+                <div class="topbar-actions">
+                    {% if permitir_troca_cliente and clientes_menu %}
+                        <form method="get" class="client-form">
+                            <select name="cliente" onchange="this.form.submit()">
+                                {% for item in clientes_menu %}
+                                    <option value="{{ item.id }}" {% if cliente_atual and item.id == cliente_atual.id %}selected{% endif %}>{{ item.nome }}</option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                    {% endif %}
+                    <a href="/admin/" class="ghost-btn">Admin</a>
+                    <form method="post" action="{% url 'logout' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="primary-btn">Sair</button>
+                    </form>
+                </div>
+            </header>
+
+            {% if messages %}
+                <section class="messages-stack">
+                    {% for message in messages %}
+                        <div class="flash-message {{ message.tags }}">{{ message }}</div>
+                    {% endfor %}
+                </section>
+            {% endif %}
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

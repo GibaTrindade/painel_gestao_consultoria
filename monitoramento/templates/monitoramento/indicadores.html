@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Indicadores | Monitoramento{% endblock %}
+{% block page_section %}Cadastro de Indicadores{% endblock %}
+{% block page_title %}Indicadores{% endblock %}
+{% block page_subtitle %}Indicadores cadastrados por diagnostico com atualizacao automatica a partir das entregas lancadas pelos funcionarios{% endblock %}
+
+{% block content %}
+<section class="filter-panel">
+    <form method="get" class="filters-inline">
+        {% if perfil_tipo == 'admin' and cliente_atual %}
+            <input type="hidden" name="cliente" value="{{ cliente_atual.id }}">
+        {% endif %}
+        <label class="filter-label">
+            <span>Selecione o diagnostico</span>
+            <select name="diagnostico" onchange="this.form.submit()">
+                {% for item in diagnosticos %}
+                    <option value="{{ item.id }}" {% if diagnostico_selecionado and item.id == diagnostico_selecionado.id %}selected{% endif %}>{{ item.titulo }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </form>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h3>Indicadores do Diagnostico Selecionado</h3>
+        <div class="panel-actions">
+            <span>{{ indicadores.count }} registros</span>
+            <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}modal=novo_indicador">Novo Indicador</a>
+        </div>
+    </div>
+    <p class="table-note">O status e o valor atual do indicador sao atualizados automaticamente com base nos lancamentos das tarefas vinculadas as acoes. O codigo do indicador e gerado pelo sistema.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Codigo</th>
+                <th>Indicador</th>
+                <th>Meta</th>
+                <th>Atual</th>
+                <th>Status</th>
+                <th>Acoes vinculadas</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for indicador in indicadores %}
+                <tr>
+                    <td>{{ indicador.codigo|default:"-" }}</td>
+                    <td>{{ indicador.nome }}</td>
+                    <td>{{ indicador.meta_valor }}</td>
+                    <td>{{ indicador.valor_atual }}</td>
+                    <td>
+                        <span class="tag {% if indicador.valor_atual >= indicador.meta_valor %}success{% elif indicador.valor_atual > 0 %}warning{% else %}danger{% endif %}">
+                            {{ indicador.status_resumo }}
+                        </span>
+                    </td>
+                    <td>
+                        <a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}indicador={{ indicador.id }}&modal=acoes_indicador">Acoes</a>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="6">Nenhum indicador encontrado.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+{% if modal == 'novo_indicador' %}
+<section class="modal-backdrop">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Novo Indicador</h3>
+            <a href="{% url 'indicadores' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}{% endif %}" class="modal-close">&times;</a>
+        </div>
+        <form method="post" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_name" value="novo_indicador">
+            {% if indicador_form.non_field_errors %}
+                <div class="form-errors">{{ indicador_form.non_field_errors }}</div>
+            {% endif %}
+            <div class="form-row single">{{ indicador_form.nome.label_tag }} {{ indicador_form.nome }}</div>
+            <div class="form-grid">
+                <div>
+                    {{ indicador_form.valor_atual.label_tag }}
+                    {{ indicador_form.valor_atual }}
+                    {% if indicador_form.valor_atual.help_text %}<small class="field-help">{{ indicador_form.valor_atual.help_text }}</small>{% endif %}
+                    {{ indicador_form.valor_atual.errors }}
+                </div>
+                <div>
+                    {{ indicador_form.meta_valor.label_tag }}
+                    {{ indicador_form.meta_valor }}
+                    {% if indicador_form.meta_valor.help_text %}<small class="field-help">{{ indicador_form.meta_valor.help_text }}</small>{% endif %}
+                    {{ indicador_form.meta_valor.errors }}
+                </div>
+            </div>
+            {{ indicador_form.nome.errors }}
+            <div class="modal-actions">
+                <a class="ghost-btn" href="{% url 'indicadores' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}{% endif %}">Cancelar</a>
+                <button type="submit" class="primary-btn">Confirmar</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endif %}
+
+{% if modal == 'acoes_indicador' and indicador_alvo_modal %}
+<section class="modal-backdrop">
+    <div class="modal-card modal-wide">
+        <div class="modal-header">
+            <h3>Acoes Vinculadas ao Indicador</h3>
+            <a href="{% url 'indicadores' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}{% endif %}" class="modal-close">&times;</a>
+        </div>
+        <div class="modal-form">
+            <div class="form-row single">
+                <label>Indicador</label>
+                <input class="form-control" value="{{ indicador_alvo_modal.nome }}" disabled>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Acao</th>
+                        <th>Meta mensal</th>
+                        <th>Status</th>
+                        <th>Responsavel</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for acao in indicador_alvo_modal.acoes.all %}
+                        <tr>
+                            <td>{{ acao.nome }}</td>
+                            <td>{{ acao.meta_mensal }}</td>
+                            <td>
+                                <span class="tag {% if acao.status == 'ativa' %}success{% elif acao.status == 'concluida' %}info{% else %}danger{% endif %}">
+                                    {{ acao.get_status_display }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if acao.responsavel %}
+                                    {{ acao.responsavel.get_full_name|default:acao.responsavel.username }}
+                                {% else %}
+                                    Nao definido
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="4">Nenhuma acao vinculada a este indicador.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="modal-actions">
+                <a class="ghost-btn" href="{% url 'indicadores' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}{% endif %}">Fechar</a>
+                <a class="primary-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}indicador={{ indicador_alvo_modal.id }}">Ir para Acoes</a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

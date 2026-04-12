@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}Diagnosticos | Monitoramento{% endblock %}
+{% block page_section %}Mapa de Diagnosticos{% endblock %}
+{% block page_title %}Diagnosticos{% endblock %}
+{% block page_subtitle %}Diagnosticos cadastrados, periodos de observacao e plano de melhoria associado a cada frente{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-header">
+        <h3>Diagnosticos em Execucao</h3>
+        <div class="panel-actions">
+            <span>{{ diagnosticos_execucao.count }} ativos</span>
+            <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}modal=novo_diagnostico">Novo Diagnostico</a>
+        </div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Descricao</th>
+                <th>Periodo do diagnostico</th>
+                <th>Periodo de melhoria</th>
+                <th>Status</th>
+                <th>Gargalo</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in diagnosticos_execucao %}
+                <tr>
+                    <td>{{ item.titulo }}</td>
+                    <td>{{ item.periodo_inicio|date:"d/m/Y" }} a {{ item.periodo_fim|date:"d/m/Y" }}</td>
+                    <td>{{ item.periodo_melhoria_inicio|date:"d/m/Y" }} a {{ item.periodo_melhoria_fim|date:"d/m/Y" }}</td>
+                    <td><span class="tag success">{{ item.get_status_display }}</span></td>
+                    <td>{{ item.causa_gargalo|default:"Nao informado" }}</td>
+                    <td><a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}diagnostico={{ item.id }}&modal=editar_diagnostico">Editar</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="6">Nenhum diagnostico em execucao.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h3>Diagnosticos a Iniciar</h3>
+        <span>{{ diagnosticos_iniciar.count }} pendentes</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Descricao</th>
+                <th>Periodo do diagnostico</th>
+                <th>Periodo de melhoria</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in diagnosticos_iniciar %}
+                <tr>
+                    <td>{{ item.titulo }}</td>
+                    <td>{{ item.periodo_inicio|date:"d/m/Y" }} a {{ item.periodo_fim|date:"d/m/Y" }}</td>
+                    <td>{{ item.periodo_melhoria_inicio|date:"d/m/Y" }} a {{ item.periodo_melhoria_fim|date:"d/m/Y" }}</td>
+                    <td><span class="tag warning">{{ item.get_status_display }}</span></td>
+                    <td><a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}diagnostico={{ item.id }}&modal=editar_diagnostico">Editar</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5">Nenhum diagnostico pendente.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+{% if diagnosticos_outros %}
+<section class="panel">
+    <div class="panel-header">
+        <h3>Diagnosticos Pausados ou Concluidos</h3>
+        <span>{{ diagnosticos_outros.count }} registros</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Descricao</th>
+                <th>Periodo do diagnostico</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in diagnosticos_outros %}
+                <tr>
+                    <td>{{ item.titulo }}</td>
+                    <td>{{ item.periodo_inicio|date:"d/m/Y" }} a {{ item.periodo_fim|date:"d/m/Y" }}</td>
+                    <td>
+                        <span class="tag {% if item.status == 'concluido' %}info{% else %}danger{% endif %}">{{ item.get_status_display }}</span>
+                    </td>
+                    <td><a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}diagnostico={{ item.id }}&modal=editar_diagnostico">Editar</a></td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+{% if modal == 'novo_diagnostico' %}
+<section class="modal-backdrop">
+    <div class="modal-card modal-wide">
+        <div class="modal-header">
+            <h3>Novo Diagnostico</h3>
+            <a href="{% url 'diagnosticos' %}{% if perfil_tipo == 'admin' and cliente_atual %}?cliente={{ cliente_atual.id }}{% endif %}" class="modal-close">×</a>
+        </div>
+        <form method="post" class="modal-form">
+            {% csrf_token %}
+            <div class="form-row single">{{ diagnostico_form.titulo.label_tag }} {{ diagnostico_form.titulo }}</div>
+            <div class="form-row single">{{ diagnostico_form.status.label_tag }} {{ diagnostico_form.status }}</div>
+            <div class="form-grid two-cols">
+                <div>
+                    <h4>Diagnostico</h4>
+                    {{ diagnostico_form.periodo_inicio.label_tag }} {{ diagnostico_form.periodo_inicio }}
+                    {{ diagnostico_form.periodo_fim.label_tag }} {{ diagnostico_form.periodo_fim }}
+                </div>
+                <div>
+                    <h4>Melhoria</h4>
+                    {{ diagnostico_form.periodo_melhoria_inicio.label_tag }} {{ diagnostico_form.periodo_melhoria_inicio }}
+                    {{ diagnostico_form.periodo_melhoria_fim.label_tag }} {{ diagnostico_form.periodo_melhoria_fim }}
+                </div>
+            </div>
+            <div class="form-row single">{{ diagnostico_form.descricao.label_tag }} {{ diagnostico_form.descricao }}</div>
+            <div class="form-row single">{{ diagnostico_form.causa_gargalo.label_tag }} {{ diagnostico_form.causa_gargalo }}</div>
+            <div class="modal-actions">
+                <a class="ghost-btn" href="{% url 'diagnosticos' %}{% if perfil_tipo == 'admin' and cliente_atual %}?cliente={{ cliente_atual.id }}{% endif %}">Cancelar</a>
+                <button type="submit" class="primary-btn">Confirmar</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endif %}
+
+{% if modal == 'editar_diagnostico' and diagnostico_alvo_modal %}
+<section class="modal-backdrop">
+    <div class="modal-card modal-wide">
+        <div class="modal-header">
+            <h3>Editar Diagnostico</h3>
+            <a href="{% url 'diagnosticos' %}{% if perfil_tipo == 'admin' and cliente_atual %}?cliente={{ cliente_atual.id }}{% endif %}" class="modal-close">×</a>
+        </div>
+        <form method="post" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_name" value="editar_diagnostico">
+            <input type="hidden" name="diagnostico_id" value="{{ diagnostico_alvo_modal.id }}">
+            <div class="form-row single">{{ diagnostico_edicao_form.titulo.label_tag }} {{ diagnostico_edicao_form.titulo }}</div>
+            <div class="form-row single">{{ diagnostico_edicao_form.status.label_tag }} {{ diagnostico_edicao_form.status }}</div>
+            <div class="form-grid two-cols">
+                <div>
+                    <h4>Diagnostico</h4>
+                    {{ diagnostico_edicao_form.periodo_inicio.label_tag }} {{ diagnostico_edicao_form.periodo_inicio }}
+                    {{ diagnostico_edicao_form.periodo_fim.label_tag }} {{ diagnostico_edicao_form.periodo_fim }}
+                </div>
+                <div>
+                    <h4>Melhoria</h4>
+                    {{ diagnostico_edicao_form.periodo_melhoria_inicio.label_tag }} {{ diagnostico_edicao_form.periodo_melhoria_inicio }}
+                    {{ diagnostico_edicao_form.periodo_melhoria_fim.label_tag }} {{ diagnostico_edicao_form.periodo_melhoria_fim }}
+                </div>
+            </div>
+            <div class="form-row single">{{ diagnostico_edicao_form.descricao.label_tag }} {{ diagnostico_edicao_form.descricao }}</div>
+            <div class="form-row single">{{ diagnostico_edicao_form.causa_gargalo.label_tag }} {{ diagnostico_edicao_form.causa_gargalo }}</div>
+            <div class="modal-actions">
+                <a class="ghost-btn" href="{% url 'diagnosticos' %}{% if perfil_tipo == 'admin' and cliente_atual %}?cliente={{ cliente_atual.id }}{% endif %}">Cancelar</a>
+                <button type="submit" class="primary-btn">Salvar Alteracoes</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

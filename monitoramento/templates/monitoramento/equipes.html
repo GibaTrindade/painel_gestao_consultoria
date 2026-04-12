@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Equipes | Monitoramento{% endblock %}
+{% block page_section %}Estrutura de Equipes{% endblock %}
+{% block page_title %}Equipes{% endblock %}
+{% block page_subtitle %}Organizacao das equipes e distribuicao dos profissionais responsaveis pelas entregas operacionais{% endblock %}
+
+{% block content %}
+<section class="filter-panel">
+    <div class="panel-header no-margin">
+        <form method="get" class="filters-inline">
+            {% if perfil_tipo == 'admin' and cliente_atual %}
+                <input type="hidden" name="cliente" value="{{ cliente_atual.id }}">
+            {% endif %}
+            <select name="equipe" onchange="this.form.submit()">
+                {% for item in equipes %}
+                    <option value="{{ item.id }}" {% if equipe_selecionada and item.id == equipe_selecionada.id %}selected{% endif %}>{{ item.nome }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        <div class="panel-actions">
+            <a class="ghost-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if equipe_selecionada %}equipe={{ equipe_selecionada.id }}&{% endif %}modal=novo_profissional">Novo Profissional</a>
+            <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}modal=nova_equipe">Nova Equipe</a>
+        </div>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h3>Profissionais da Equipe Selecionada</h3>
+        <span>{% if equipe_selecionada %}{{ equipe_selecionada.total_funcionarios }} membros{% else %}0 membros{% endif %}</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Funcao</th>
+                <th>Dias</th>
+                <th>Tarefas</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for profissional in profissionais %}
+                <tr>
+                    <td>{{ profissional.user.get_full_name|default:profissional.user.username }}</td>
+                    <td>{{ profissional.funcao|default:"-" }}</td>
+                    <td>{{ profissional.dias_trabalho|default:"-" }}</td>
+                    <td>{{ profissional.tarefas.count }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4">Nenhum profissional nessa equipe.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+{% if modal == 'nova_equipe' %}
+<section class="modal-backdrop">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Nova Equipe</h3>
+            <a href="{% url 'equipes' %}{% if perfil_tipo == 'admin' and cliente_atual %}?cliente={{ cliente_atual.id }}{% endif %}" class="modal-close">×</a>
+        </div>
+        <form method="post" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_name" value="nova_equipe">
+            <div class="form-row single">{{ equipe_form.nome.label_tag }} {{ equipe_form.nome }}</div>
+            <div class="modal-actions">
+                <a class="ghost-btn" href="{% url 'equipes' %}{% if perfil_tipo == 'admin' and cliente_atual %}?cliente={{ cliente_atual.id }}{% endif %}">Cancelar</a>
+                <button type="submit" class="primary-btn">Confirmar</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endif %}
+
+{% if modal == 'novo_profissional' %}
+<section class="modal-backdrop">
+    <div class="modal-card modal-wide">
+        <div class="modal-header">
+            <h3>Novo Profissional</h3>
+            <a href="{% url 'equipes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if equipe_selecionada %}equipe={{ equipe_selecionada.id }}{% endif %}" class="modal-close">×</a>
+        </div>
+        <form method="post" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_name" value="novo_profissional">
+            <div class="form-row single">{{ profissional_form.nome.label_tag }} {{ profissional_form.nome }}</div>
+            <div class="form-grid">
+                <div>{{ profissional_form.username.label_tag }} {{ profissional_form.username }}</div>
+                <div>{{ profissional_form.cargo.label_tag }} {{ profissional_form.cargo }}</div>
+            </div>
+            <div class="form-grid">
+                <div>{{ profissional_form.telefone.label_tag }} {{ profissional_form.telefone }}</div>
+                <div>{{ profissional_form.email.label_tag }} {{ profissional_form.email }}</div>
+            </div>
+            <div class="form-row single">
+                <label>Dias de trabalho</label>
+                <div class="weekday-grid">{{ profissional_form.dias_trabalho }}</div>
+            </div>
+            <div class="form-row checkbox-field">{{ profissional_form.ativo }} <label for="{{ profissional_form.ativo.id_for_label }}">Ativo</label></div>
+            <div class="modal-actions">
+                <a class="ghost-btn" href="{% url 'equipes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if equipe_selecionada %}equipe={{ equipe_selecionada.id }}{% endif %}">Cancelar</a>
+                <button type="submit" class="primary-btn">Confirmar</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

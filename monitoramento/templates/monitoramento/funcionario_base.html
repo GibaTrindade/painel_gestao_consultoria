@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}App - Metas{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body class="worker-body">
+    <main class="worker-shell">
+        <header class="worker-header">
+            <div class="worker-navbar">
+                <div class="worker-brand-row">
+                    <div class="worker-mini-logo">SMR</div>
+                    <span>App - Metas</span>
+                </div>
+                <div class="worker-userbar">
+                    <span class="worker-user-name">{{ request.user.get_full_name|default:request.user.username }}</span>
+                    <form method="post" action="{% url 'logout' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="primary-btn">Sair</button>
+                    </form>
+                </div>
+            </div>
+            <div class="worker-topline">
+                <h1>{% block worker_title %}Hoje{% endblock %}</h1>
+                <p>{% block worker_subtitle %}Acompanhe suas metas e lancamentos diarios{% endblock %}</p>
+            </div>
+        </header>
+
+        {% if messages %}
+            <section class="messages-stack">
+                {% for message in messages %}
+                    <div class="flash-message {{ message.tags }}">{{ message }}</div>
+                {% endfor %}
+            </section>
+        {% endif %}
+
+        <section class="worker-content">
+            {% block worker_content %}{% endblock %}
+        </section>
+
+        <nav class="worker-nav">
+            <a href="{% url 'funcionario-metas' %}" class="{% if pagina == 'funcionario-metas' %}active{% endif %}">Metas</a>
+            <a href="{% url 'funcionario-resultados' %}" class="{% if pagina == 'funcionario-resultados' %}active{% endif %}">Resultados</a>
+            <a href="{% url 'funcionario-alertas' %}" class="{% if pagina == 'funcionario-alertas' %}active{% endif %}">Alertas</a>
+        </nav>
+    </main>
+</body>
+</html>
