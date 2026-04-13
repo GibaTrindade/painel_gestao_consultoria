@@ -134,6 +134,14 @@ select {
     color: #234669;
     font-weight: 600;
     font-size: 0.84rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.nav-links a i {
+    font-size: 1rem;
+    opacity: 0.9;
 }
 
 .nav-links a.active,
@@ -208,6 +216,13 @@ select {
     flex-wrap: wrap;
 }
 
+.inline-action-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .no-margin {
     margin-bottom: 0;
 }
@@ -239,12 +254,23 @@ select {
 
 .ghost-chip {
     display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     padding: 8px 12px;
     border-radius: 999px;
     background: rgba(93, 125, 222, 0.14);
     color: var(--blue);
     font-size: 0.82rem;
     font-weight: 700;
+}
+
+.primary-btn,
+.ghost-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 .primary-btn {
@@ -523,6 +549,13 @@ select {
 .table-action-cell {
     width: 1%;
     white-space: nowrap;
+}
+
+.table-inline-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .soft-btn {
@@ -1040,19 +1073,29 @@ th {
     display: grid;
     place-items: center;
     padding: 20px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     z-index: 30;
 }
 
 .modal-card {
     width: min(620px, 100%);
+    max-height: calc(100vh - 40px);
     border-radius: 24px;
     padding: 20px;
     background: rgba(255, 255, 255, 0.96);
     box-shadow: 0 30px 70px rgba(18, 32, 54, 0.22);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 .modal-wide {
     width: min(860px, 100%);
+}
+
+body.modal-open {
+    overflow: hidden;
 }
 
 .modal-header,
@@ -1120,6 +1163,34 @@ th {
     gap: 8px;
 }
 
+.assignment-entry-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px 20px;
+    align-items: end;
+}
+
+.assignment-entry-main {
+    display: grid;
+    gap: 14px;
+}
+
+.assignment-value-field {
+    max-width: 380px;
+}
+
+.checkbox-field-tight {
+    align-self: end;
+    justify-self: end;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.checkbox-field-tight input,
+.checkbox-field-tight label {
+    margin: 0;
+}
+
 .assignment-type-box {
     padding: 16px 18px;
     border: 1px solid rgba(56, 84, 110, 0.14);
@@ -1139,6 +1210,128 @@ th {
     background: rgba(243, 247, 255, 0.9);
 }
 
+.distribution-mode-panel {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 20px;
+    border: 1px solid rgba(38, 78, 171, 0.14);
+    background: linear-gradient(180deg, rgba(241, 246, 255, 0.95), rgba(255, 255, 255, 0.82));
+}
+
+.distribution-mode-panel[hidden],
+.distribution-mode-card[hidden] {
+    display: none !important;
+}
+
+.distribution-mode-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: start;
+    flex-wrap: wrap;
+}
+
+.distribution-mode-header h4,
+.distribution-mode-card strong {
+    margin: 0;
+}
+
+.distribution-mode-header p,
+.distribution-mode-card p {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.distribution-mode-toggle {
+    display: inline-flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.mode-choice {
+    border: 1px solid rgba(31, 76, 194, 0.16);
+    background: rgba(255, 255, 255, 0.85);
+    color: var(--blue);
+    border-radius: 16px;
+    padding: 10px 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.mode-choice.active {
+    background: linear-gradient(90deg, #0d39b0, #1e53e4);
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(30, 83, 228, 0.18);
+}
+
+.distribution-mode-card {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(37, 74, 150, 0.12);
+    background: rgba(255, 255, 255, 0.86);
+}
+
+.distribution-mode-card.active {
+    border-color: rgba(30, 83, 228, 0.24);
+}
+
+.distribution-preview,
+.distribution-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.distribution-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(109, 136, 212, 0.12);
+    color: var(--blue);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.manual-distribution-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.manual-distribution-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 140px;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.84);
+    border: 1px solid rgba(37, 74, 150, 0.1);
+}
+
+.manual-distribution-row input {
+    width: 100%;
+    border: 1px solid rgba(56, 84, 110, 0.18);
+    background: rgba(255, 255, 255, 0.96);
+    color: var(--text);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font: inherit;
+}
+
+.distribution-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
 .assignment-toolbar {
     display: flex;
     justify-content: flex-end;
@@ -1148,6 +1341,49 @@ th {
     padding: 8px 14px;
     border-radius: 999px;
     font-size: 0.82rem;
+}
+
+.team-detail-list {
+    display: grid;
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.team-detail-card {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 20px;
+    border: 1px solid rgba(31, 76, 194, 0.12);
+    background: rgba(246, 249, 255, 0.88);
+}
+
+.team-detail-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: start;
+}
+
+.team-detail-header h4 {
+    margin: 0;
+}
+
+.team-detail-header p {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.team-detail-kpis {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.team-detail-table td:last-child {
+    max-width: 280px;
+    color: var(--muted);
 }
 
 .compact-table th,
@@ -1416,6 +1652,10 @@ th {
     color: var(--blue);
     border: 1px solid rgba(26, 63, 168, 0.12);
     background: rgba(255, 255, 255, 0.7);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 .worker-nav a.active {
@@ -1484,12 +1724,19 @@ th {
     .form-grid,
     .form-grid.two-cols,
     .form-grid.three-cols,
+    .assignment-entry-layout,
     .modal-header,
     .modal-actions,
-    .assignment-head {
+    .assignment-head,
+    .team-detail-header {
         grid-template-columns: 1fr;
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .checkbox-field-tight {
+        justify-self: start;
+        align-self: start;
     }
 
     .worker-shell {

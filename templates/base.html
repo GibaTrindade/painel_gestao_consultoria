@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Monitoramento de Metas{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
 </head>
 <body>
@@ -28,12 +29,12 @@
                 </div>
 
                 <nav class="nav-links">
-                    <a href="{% url 'dashboard' %}" class="{% if pagina == 'dashboard' %}active{% endif %}">Dashboard</a>
-                    <a href="{% url 'diagnosticos' %}" class="{% if pagina == 'diagnosticos' %}active{% endif %}">Diagnosticos</a>
-                    <a href="{% url 'indicadores' %}" class="{% if pagina == 'indicadores' %}active{% endif %}">Indicadores</a>
-                    <a href="{% url 'acoes' %}" class="{% if pagina == 'acoes' %}active{% endif %}">Acoes</a>
-                    <a href="{% url 'equipes' %}" class="{% if pagina == 'equipes' %}active{% endif %}">Equipes</a>
-                    <a href="{% url 'profissionais' %}" class="{% if pagina == 'profissionais' %}active{% endif %}">Profissionais</a>
+                    <a href="{% url 'dashboard' %}" class="{% if pagina == 'dashboard' %}active{% endif %}"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
+                    <a href="{% url 'diagnosticos' %}" class="{% if pagina == 'diagnosticos' %}active{% endif %}"><i class="bi bi-clipboard2-pulse"></i><span>Diagnosticos</span></a>
+                    <a href="{% url 'indicadores' %}" class="{% if pagina == 'indicadores' %}active{% endif %}"><i class="bi bi-speedometer2"></i><span>Indicadores</span></a>
+                    <a href="{% url 'acoes' %}" class="{% if pagina == 'acoes' %}active{% endif %}"><i class="bi bi-list-check"></i><span>Acoes</span></a>
+                    <a href="{% url 'equipes' %}" class="{% if pagina == 'equipes' %}active{% endif %}"><i class="bi bi-diagram-3"></i><span>Equipes</span></a>
+                    <a href="{% url 'profissionais' %}" class="{% if pagina == 'profissionais' %}active{% endif %}"><i class="bi bi-people"></i><span>Profissionais</span></a>
                 </nav>
             </div>
 
@@ -52,6 +53,16 @@
                 </div>
 
                 <div class="topbar-actions">
+                    {% if modo_hibrido_disponivel %}
+                        <form method="post" action="{% url 'alternar-modo' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="modo" value="{% if perfil_tipo == 'funcionario' %}gestor{% else %}funcionario{% endif %}">
+                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                            <button type="submit" class="ghost-btn">
+                                {% if perfil_tipo == 'funcionario' %}Entrar como gestor{% else %}Entrar como funcionario{% endif %}
+                            </button>
+                        </form>
+                    {% endif %}
                     {% if permitir_troca_cliente and clientes_menu %}
                         <form method="get" class="client-form">
                             <select name="cliente" onchange="this.form.submit()">
@@ -61,10 +72,10 @@
                             </select>
                         </form>
                     {% endif %}
-                    <a href="/admin/" class="ghost-btn">Admin</a>
+                    <a href="/admin/" class="ghost-btn"><i class="bi bi-shield-lock"></i> Admin</a>
                     <form method="post" action="{% url 'logout' %}">
                         {% csrf_token %}
-                        <button type="submit" class="primary-btn">Sair</button>
+                        <button type="submit" class="primary-btn"><i class="bi bi-box-arrow-right"></i> Sair</button>
                     </form>
                 </div>
             </header>

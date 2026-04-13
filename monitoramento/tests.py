@@ -14,6 +14,7 @@ from .models import (
     Funcionario,
     Indicador,
     IndicadorHistoricoMensal,
+    IndicadorMetaVigencia,
     PerfilUsuario,
     RegistroDiario,
     Tarefa,
@@ -96,8 +97,68 @@ class LoginOrganizacaoTests(BaseMonitoramentoTestCase):
         response = self.client_http.get("/")
         self.assertRedirects(response, "/app/metas/")
 
+    def test_usuario_hibrido_pode_alternar_entre_gestor_e_funcionario(self):
+        hybrid_user = User.objects.create_user(username="lider", password="lider123", first_name="Lider")
+        UsuarioCliente.objects.create(
+            user=hybrid_user,
+            cliente=self.cliente_org,
+            tipo=PerfilUsuario.TipoPerfil.CLIENTE,
+        )
+        Funcionario.objects.create(
+            cliente=self.cliente_org,
+            equipe=self.equipe,
+            user=hybrid_user,
+            funcao="Lider de campo",
+        )
+
+        self.client_http.post("/accounts/organizacao/", {"codigo": "maracaja"})
+        self.client_http.post("/accounts/login/", {"username": "lider", "password": "lider123"})
+
+        response_dashboard = self.client_http.get("/")
+        self.assertEqual(response_dashboard.status_code, 200)
+        self.assertContains(response_dashboard, "Entrar como funcionario")
+
+        response_switch = self.client_http.post(
+            "/alternar-modo/",
+            {"modo": "funcionario", "next": "/"},
+        )
+        self.assertEqual(response_switch.status_code, 302)
+        self.assertEqual(response_switch.url, "/")
+
+        response_worker = self.client_http.get("/")
+        self.assertRedirects(response_worker, "/app/metas/")
+
+        response_back = self.client_http.post(
+            "/alternar-modo/",
+            {"modo": "gestor", "next": "/"},
+        )
+        self.assertEqual(response_back.status_code, 302)
+        self.assertEqual(response_back.url, "/")
+
+        response_dashboard_again = self.client_http.get("/")
+        self.assertEqual(response_dashboard_again.status_code, 200)
+        self.assertContains(response_dashboard_again, "Entrar como funcionario")
+
 
 class AtribuicaoAcaoTests(BaseMonitoramentoTestCase):
+    def test_nova_acao_pode_definir_responsavel(self):
+        self.login_gestor()
+
+        response = self.client_http.post(
+            f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&competencia=2026-04",
+            {
+                "form_name": "nova_acao",
+                "nome": "Buscar faltosos",
+                "meta_mensal": "45",
+                "status": "ativa",
+                "responsavel": str(self.gestor.id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        acao = AcaoMelhoria.objects.get(nome="Buscar faltosos")
+        self.assertEqual(acao.responsavel, self.gestor)
+
     def test_confirma_lote_de_atribuicoes_pendentes(self):
         self.login_gestor()
 
@@ -182,8 +243,108 @@ class AtribuicaoAcaoTests(BaseMonitoramentoTestCase):
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(Tarefa.objects.filter(acao=self.acao, funcionario=self.funcionario, meta_quantidade=Decimal("10")).exists())
-        self.assertTrue(Tarefa.objects.filter(acao=self.acao, funcionario=outro_funcionario, meta_quantidade=Decimal("10")).exists())
+        self.assertTrue(Tarefa.objects.filter(acao=self.acao, funcionario=self.funcionario, meta_quantidade=Decimal("5")).exists())
+        self.assertTrue(Tarefa.objects.filter(acao=self.acao, funcionario=outro_funcionario, meta_quantidade=Decimal("5")).exists())
+
+    def test_rateio_para_equipe_preserva_valor_total_com_inteiros(self):
+        outro_user = User.objects.create_user(username="manoel2", password="func123", first_name="Manoel")
+        terceiro_user = User.objects.create_user(username="joana", password="func123", first_name="Joana")
+        for user in [outro_user, terceiro_user]:
+            PerfilUsuario.objects.create(
+                user=user,
+                tipo=PerfilUsuario.TipoPerfil.FUNCIONARIO,
+                cliente=self.cliente_org,
+            )
+            UsuarioCliente.objects.create(
+                user=user,
+                cliente=self.cliente_org,
+                tipo=PerfilUsuario.TipoPerfil.FUNCIONARIO,
+            )
+        Funcionario.objects.create(
+            cliente=self.cliente_org,
+            equipe=self.equipe,
+            user=outro_user,
+            funcao="Operador",
+        )
+        Funcionario.objects.create(
+            cliente=self.cliente_org,
+            equipe=self.equipe,
+            user=terceiro_user,
+            funcao="Operador",
+        )
+
+        self.login_gestor()
+
+        response = self.client_http.post(
+            f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&acao={self.acao.id}&modal=atribuir_acao",
+            {
+                "form_name": "confirmar_atribuicoes",
+                "acao_id": self.acao.id,
+                "pending_assignments": (
+                    '[{"tipo_destino":"equipe","profissional":"","equipe_destino":"%s","nome_exibicao":"Equipe 1","valor_mensal":"10","ativo":true}]'
+                    % self.equipe.id
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        metas = list(Tarefa.objects.filter(acao=self.acao).order_by("id").values_list("meta_quantidade", flat=True))
+        self.assertEqual(sum(metas, Decimal("0")), Decimal("10"))
+        self.assertEqual(metas, [Decimal("3"), Decimal("3"), Decimal("4")])
+
+    def test_atribuicao_manual_para_equipe_respeita_distribuicao_por_membro(self):
+        outro_user = User.objects.create_user(username="manoel3", password="func123", first_name="Manoel")
+        terceiro_user = User.objects.create_user(username="joana2", password="func123", first_name="Joana")
+        funcionarios = [self.func_user, outro_user, terceiro_user]
+        for user in [outro_user, terceiro_user]:
+            PerfilUsuario.objects.create(
+                user=user,
+                tipo=PerfilUsuario.TipoPerfil.FUNCIONARIO,
+                cliente=self.cliente_org,
+            )
+            UsuarioCliente.objects.create(
+                user=user,
+                cliente=self.cliente_org,
+                tipo=PerfilUsuario.TipoPerfil.FUNCIONARIO,
+            )
+        outro_funcionario = Funcionario.objects.create(
+            cliente=self.cliente_org,
+            equipe=self.equipe,
+            user=outro_user,
+            funcao="Operador",
+        )
+        terceiro_funcionario = Funcionario.objects.create(
+            cliente=self.cliente_org,
+            equipe=self.equipe,
+            user=terceiro_user,
+            funcao="Operador",
+        )
+
+        self.login_gestor()
+
+        response = self.client_http.post(
+            f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&acao={self.acao.id}&modal=atribuir_acao",
+            {
+                "form_name": "confirmar_atribuicoes",
+                "acao_id": self.acao.id,
+                "pending_assignments": (
+                    '[{"tipo_destino":"equipe","profissional":"","equipe_destino":"%s","nome_exibicao":"Equipe 1","valor_mensal":"10","ativo":true,"modo_rateio":"manual","distribuicoes":[{"funcionario_id":"%s","valor_mensal":"2"},{"funcionario_id":"%s","valor_mensal":"3"},{"funcionario_id":"%s","valor_mensal":"5"}]}]'
+                    % (self.equipe.id, self.funcionario.id, outro_funcionario.id, terceiro_funcionario.id)
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        atribuicao = AcaoAtribuicao.objects.get(acao=self.acao, equipe=self.equipe)
+        self.assertEqual(atribuicao.modo_rateio, "manual")
+        self.assertEqual(atribuicao.distribuicoes.count(), 3)
+        metas = {
+            tarefa.funcionario_id: tarefa.meta_quantidade
+            for tarefa in Tarefa.objects.filter(acao=self.acao)
+        }
+        self.assertEqual(metas[self.funcionario.id], Decimal("2"))
+        self.assertEqual(metas[outro_funcionario.id], Decimal("3"))
+        self.assertEqual(metas[terceiro_funcionario.id], Decimal("5"))
 
     def test_bloqueia_confirmacao_quando_soma_ultrapassa_meta_da_acao(self):
         self.login_gestor()
@@ -204,6 +365,138 @@ class AtribuicaoAcaoTests(BaseMonitoramentoTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "A soma dos valores mensais vinculados nao pode ultrapassar 30")
         self.assertFalse(AcaoAtribuicao.objects.filter(acao=self.acao, funcionario=self.funcionario, valor_mensal=Decimal("31")).exists())
+
+    def test_pagina_acoes_considera_apenas_competencia_selecionada(self):
+        self.login_gestor()
+        tarefa = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo="Transportar leite",
+            meta_quantidade=Decimal("30"),
+            previsto_quantidade=Decimal("30"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa,
+            funcionario=self.funcionario,
+            data=date(2026, 3, 15),
+            descricao_atividade="Entrega de marco",
+            quantidade_prevista=Decimal("30"),
+            quantidade_realizada=Decimal("18"),
+            situacao=Tarefa.Situacao.EM_ANDAMENTO,
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa,
+            funcionario=self.funcionario,
+            data=date(2026, 4, 10),
+            descricao_atividade="Entrega de abril",
+            quantidade_prevista=Decimal("30"),
+            quantidade_realizada=Decimal("6"),
+            situacao=Tarefa.Situacao.EM_ANDAMENTO,
+        )
+
+        response = self.client_http.get(
+            f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&competencia=2026-04"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["competencia_input"], "2026-04")
+        self.assertEqual(response.context["acoes_lista"][0]["realizado_total"], Decimal("6"))
+        self.assertEqual(response.context["acoes_lista"][0]["percentual_realizado"], Decimal("20"))
+
+    def test_botao_ver_equipes_aparece_somente_quando_acao_tem_equipe_vinculada(self):
+        self.login_gestor()
+
+        response_sem_equipe = self.client_http.get(
+            f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&competencia=2026-04"
+        )
+        self.assertEqual(response_sem_equipe.status_code, 200)
+        self.assertNotContains(response_sem_equipe, "Ver equipes")
+
+        AcaoAtribuicao.objects.create(
+            acao=self.acao,
+            equipe=self.equipe,
+            valor_mensal=Decimal("20"),
+            modo_rateio="automatico",
+            ativo=True,
+        )
+
+        response_com_equipe = self.client_http.get(
+            f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&competencia=2026-04"
+        )
+        self.assertEqual(response_com_equipe.status_code, 200)
+        self.assertContains(response_com_equipe, "Ver equipes")
+
+    def test_modal_equipes_mostra_meta_oficial_e_contribuicao_individual(self):
+        outro_user = User.objects.create_user(username="bia", password="func123", first_name="Bia")
+        PerfilUsuario.objects.create(
+            user=outro_user,
+            tipo=PerfilUsuario.TipoPerfil.FUNCIONARIO,
+            cliente=self.cliente_org,
+        )
+        UsuarioCliente.objects.create(
+            user=outro_user,
+            cliente=self.cliente_org,
+            tipo=PerfilUsuario.TipoPerfil.FUNCIONARIO,
+        )
+        outro_funcionario = Funcionario.objects.create(
+            cliente=self.cliente_org,
+            equipe=self.equipe,
+            user=outro_user,
+            funcao="Vacinadora",
+        )
+        AcaoAtribuicao.objects.create(
+            acao=self.acao,
+            equipe=self.equipe,
+            valor_mensal=Decimal("20"),
+            modo_rateio="automatico",
+            ativo=True,
+        )
+        tarefa_suel = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo="Meta Sueldison",
+            meta_quantidade=Decimal("10"),
+            previsto_quantidade=Decimal("10"),
+        )
+        tarefa_bia = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=outro_funcionario,
+            titulo="Meta Bia",
+            meta_quantidade=Decimal("10"),
+            previsto_quantidade=Decimal("10"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa_suel,
+            funcionario=self.funcionario,
+            data=date(2026, 4, 10),
+            descricao_atividade="Atendimento",
+            quantidade_prevista=Decimal("10"),
+            quantidade_realizada=Decimal("6"),
+            justificativa="Equipe reduzida",
+            situacao=Tarefa.Situacao.EM_ANDAMENTO,
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa_bia,
+            funcionario=outro_funcionario,
+            data=date(2026, 4, 10),
+            descricao_atividade="Atendimento",
+            quantidade_prevista=Decimal("10"),
+            quantidade_realizada=Decimal("8"),
+            justificativa="Cobriu setor vizinho",
+            situacao=Tarefa.Situacao.EM_ANDAMENTO,
+        )
+
+        self.login_gestor()
+        response = self.client_http.get(
+            f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&competencia=2026-04&acao={self.acao.id}&modal=detalhe_equipes"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Meta da equipe: 20")
+        self.assertContains(response, "Realizado da equipe: 14")
+        self.assertContains(response, "Sueldison")
+        self.assertContains(response, "Bia")
+        self.assertContains(response, "Equipe reduzida")
 
 
 class DiagnosticoStatusTests(BaseMonitoramentoTestCase):
@@ -253,14 +546,40 @@ class IndicadorTests(BaseMonitoramentoTestCase):
             {
                 "form_name": "novo_indicador",
                 "nome": "Producao de leite fermentado",
-                "valor_atual": "0",
                 "meta_valor": "100",
+                "vigencia_inicio": "2026-04",
             },
         )
 
         self.assertEqual(response.status_code, 302)
         novo_indicador = Indicador.objects.get(nome="Producao de leite fermentado")
         self.assertTrue(novo_indicador.codigo.startswith("IND-"))
+        self.assertEqual(novo_indicador.valor_atual, Decimal("0"))
+        self.assertTrue(
+            IndicadorMetaVigencia.objects.filter(
+                indicador=novo_indicador,
+                inicio_vigencia=date(2026, 4, 1),
+                valor_meta=Decimal("100"),
+            ).exists()
+        )
+
+    def test_criacao_de_indicador_ignora_valor_manual_enviado_no_post(self):
+        self.login_gestor()
+
+        response = self.client_http.post(
+            "/indicadores/",
+            {
+                "form_name": "novo_indicador",
+                "nome": "Cobertura vacinal",
+                "meta_valor": "250",
+                "vigencia_inicio": "2026-04",
+                "valor_atual": "999",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        indicador = Indicador.objects.get(nome="Cobertura vacinal")
+        self.assertEqual(indicador.valor_atual, Decimal("0"))
 
     def test_pagina_indicadores_exibe_modal_de_acoes(self):
         self.login_gestor()
@@ -277,6 +596,76 @@ class IndicadorTests(BaseMonitoramentoTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Acoes Vinculadas ao Indicador")
         self.assertContains(response, "Acao modal")
+
+    def test_editar_indicador_atualiza_dados_basicos(self):
+        self.login_gestor()
+
+        response = self.client_http.post(
+            f"/indicadores/?diagnostico={self.diagnostico.id}",
+            {
+                "form_name": "editar_indicador",
+                "indicador_id": self.indicador.id,
+                "nome": "Producao de queijo premium",
+                "meta_valor": "650",
+                "vigencia_inicio": "2026-04",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.indicador.refresh_from_db()
+        self.assertEqual(self.indicador.nome, "Producao de queijo premium")
+        self.assertEqual(self.indicador.meta_valor, Decimal("650"))
+        self.assertEqual(self.indicador.valor_atual, Decimal("0"))
+
+    def test_edicao_de_indicador_ignora_valor_manual_enviado_no_post(self):
+        self.login_gestor()
+
+        response = self.client_http.post(
+            f"/indicadores/?diagnostico={self.diagnostico.id}",
+            {
+                "form_name": "editar_indicador",
+                "indicador_id": self.indicador.id,
+                "nome": "Producao de queijo premium",
+                "meta_valor": "650",
+                "vigencia_inicio": "2026-04",
+                "valor_atual": "999",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.indicador.refresh_from_db()
+        self.assertEqual(self.indicador.valor_atual, Decimal("0"))
+
+    def test_edicao_de_meta_cria_nova_vigencia_e_fecha_anterior(self):
+        IndicadorMetaVigencia.objects.create(
+            indicador=self.indicador,
+            inicio_vigencia=date(2026, 1, 1),
+            valor_meta=Decimal("500"),
+        )
+        self.login_gestor()
+
+        response = self.client_http.post(
+            f"/indicadores/?diagnostico={self.diagnostico.id}",
+            {
+                "form_name": "editar_indicador",
+                "indicador_id": self.indicador.id,
+                "nome": self.indicador.nome,
+                "meta_valor": "650",
+                "vigencia_inicio": "2026-05",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        vigencia_anterior = IndicadorMetaVigencia.objects.get(
+            indicador=self.indicador,
+            inicio_vigencia=date(2026, 1, 1),
+        )
+        nova_vigencia = IndicadorMetaVigencia.objects.get(
+            indicador=self.indicador,
+            inicio_vigencia=date(2026, 5, 1),
+        )
+        self.assertEqual(vigencia_anterior.fim_vigencia, date(2026, 4, 30))
+        self.assertEqual(nova_vigencia.valor_meta, Decimal("650"))
 
 
 class FuncionarioAreaTests(BaseMonitoramentoTestCase):

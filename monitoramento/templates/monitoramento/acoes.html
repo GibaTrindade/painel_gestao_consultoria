@@ -6,35 +6,73 @@
 {% block page_subtitle %}Plano de acao vinculado aos indicadores com metas mensais, atribuicoes e status de execucao{% endblock %}
 
 {% block content %}
+<section class="dashboard-toolbar filter-panel">
+    <div>
+        <p class="overline">Competencia em analise</p>
+        <h3>{{ competencia_label }}</h3>
+        <p class="subtitle-inline">
+            {% if indicador_selecionado %}
+                A leitura das acoes considera apenas os lancamentos do indicador {{ indicador_selecionado.nome }} na competencia selecionada.
+            {% else %}
+                Selecione um diagnostico e um indicador para acompanhar o plano de acao.
+            {% endif %}
+        </p>
+    </div>
+    <form method="get" class="dashboard-filter-form">
+        {% if perfil_tipo == 'admin' and cliente_atual %}
+            <input type="hidden" name="cliente" value="{{ cliente_atual.id }}">
+        {% endif %}
+        {% if diagnostico_selecionado %}
+            <input type="hidden" name="diagnostico" value="{{ diagnostico_selecionado.id }}">
+        {% endif %}
+        {% if indicador_selecionado %}
+            <input type="hidden" name="indicador" value="{{ indicador_selecionado.id }}">
+        {% endif %}
+        <input type="hidden" name="competencia" value="{{ competencia_input }}" data-dashboard-month-input>
+        <div class="month-switcher" data-month-switcher>
+            <button type="button" class="month-arrow" data-month-target="{{ competencia_anterior_input }}" aria-label="Mes anterior">&larr;</button>
+            <span class="month-switcher-label">{{ competencia_nome }}</span>
+            <button type="button" class="month-arrow" data-month-target="{{ competencia_proxima_input }}" aria-label="Proximo mes">&rarr;</button>
+        </div>
+    </form>
+</section>
+
 <section class="filter-panel">
     <form method="get" class="filters-inline">
         {% if perfil_tipo == 'admin' and cliente_atual %}
             <input type="hidden" name="cliente" value="{{ cliente_atual.id }}">
         {% endif %}
-        <select name="diagnostico" onchange="this.form.submit()">
-            {% for item in diagnosticos %}
-                <option value="{{ item.id }}" {% if diagnostico_selecionado and item.id == diagnostico_selecionado.id %}selected{% endif %}>{{ item.titulo }}</option>
-            {% endfor %}
-        </select>
-        <select name="indicador" onchange="this.form.submit()">
-            {% for item in indicadores %}
-                <option value="{{ item.id }}" {% if indicador_selecionado and item.id == indicador_selecionado.id %}selected{% endif %}>{{ item.nome }}</option>
-            {% endfor %}
-        </select>
+        <input type="hidden" name="competencia" value="{{ competencia_input }}">
+        <label class="filter-label">
+            <span><i class="bi bi-clipboard2-pulse"></i> Selecione o diagnostico</span>
+            <select name="diagnostico" onchange="this.form.submit()">
+                {% for item in diagnosticos %}
+                    <option value="{{ item.id }}" {% if diagnostico_selecionado and item.id == diagnostico_selecionado.id %}selected{% endif %}>{{ item.titulo }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="filter-label">
+            <span><i class="bi bi-speedometer2"></i> Selecione o indicador</span>
+            <select name="indicador" onchange="this.form.submit()">
+                {% for item in indicadores %}
+                    <option value="{{ item.id }}" {% if indicador_selecionado and item.id == indicador_selecionado.id %}selected{% endif %}>{{ item.nome }}</option>
+                {% endfor %}
+            </select>
+        </label>
     </form>
 </section>
 
 {% if indicador_selecionado %}
 <section class="stats-grid compact">
     <article class="stat-card">
-        <span>Valor Atual do Indicador</span>
-        <strong>{{ indicador_selecionado.valor_atual }}</strong>
+        <span>Valor do Indicador na Competencia</span>
+        <strong>{{ indicador_valor_competencia }}</strong>
         <small>{{ indicador_selecionado.unidade }}</small>
     </article>
     <article class="stat-card">
-        <span>Meta Definida para o Indicador</span>
-        <strong>{{ indicador_selecionado.meta_valor }}</strong>
-        <small>{{ indicador_selecionado.unidade }}</small>
+        <span>Meta do Indicador na Competencia</span>
+        <strong>{{ indicador_meta_competencia }}</strong>
+        <small>{{ indicador_selecionado.unidade }} | {{ indicador_percentual_competencia|floatformat:0 }}%</small>
     </article>
 </section>
 {% endif %}
@@ -44,14 +82,16 @@
         <h3>Acoes de Melhoria Cadastradas</h3>
         <div class="panel-actions">
             <span>{{ acoes.count }} registros</span>
-            <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}modal=nova_acao">Nova Acao</a>
+            <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}&modal=nova_acao">Nova Acao</a>
         </div>
     </div>
+    <p class="table-note">Os percentuais abaixo consideram apenas os registros lancados na competencia selecionada.</p>
     <table>
         <thead>
             <tr>
                 <th>Nome</th>
                 <th>Meta mensal</th>
+                <th>Realizado no mes</th>
                 <th>Realizado</th>
                 <th>Responsavel</th>
                 <th>Status</th>
@@ -59,23 +99,37 @@
             </tr>
         </thead>
         <tbody>
-            {% for acao in acoes %}
+            {% for acao in acoes_lista %}
                 <tr>
                     <td>{{ acao.nome }}</td>
                     <td>{{ acao.meta_mensal }}</td>
+                    <td>{{ acao.realizado_total }}</td>
                     <td>{{ acao.percentual_realizado|floatformat:0 }}%</td>
                     <td>
                         {% if acao.responsavel %}
                             {{ acao.responsavel.get_full_name|default:acao.responsavel.username }}
                         {% else %}
-                            Nao definido
+                            Sem responsavel definido
                         {% endif %}
                     </td>
-                    <td><span class="tag {% if acao.status == 'ativa' %}success{% elif acao.status == 'concluida' %}info{% else %}danger{% endif %}">{{ acao.get_status_display }}</span></td>
-                    <td><a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}acao={{ acao.id }}&modal=atribuir_acao">Adicionar profissional</a></td>
+                    <td><span class="tag {% if acao.status == 'ativa' %}success{% elif acao.status == 'concluida' %}info{% else %}danger{% endif %}">{{ acao.status_display }}</span></td>
+                    <td class="table-action-cell">
+                        <div class="table-inline-actions">
+                            <a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}&acao={{ acao.id }}&modal=atribuir_acao">
+                                <i class="bi bi-diagram-3"></i>
+                                Atribuicoes
+                            </a>
+                            {% if acao.possui_equipes %}
+                                <a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}&acao={{ acao.id }}&modal=detalhe_equipes">
+                                    <i class="bi bi-people"></i>
+                                    Ver equipes
+                                </a>
+                            {% endif %}
+                        </div>
+                    </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="6">Nenhuma acao encontrada.</td></tr>
+                <tr><td colspan="7">Nenhuma acao encontrada.</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -86,7 +140,7 @@
     <div class="modal-card">
         <div class="modal-header">
             <h3>Nova Acao</h3>
-            <a href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}{% endif %}" class="modal-close">×</a>
+            <a href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}" class="modal-close">&times;</a>
         </div>
         <form method="post" class="modal-form" id="assignment-modal-form" novalidate>
             {% csrf_token %}
@@ -96,8 +150,10 @@
                 <div>{{ acao_form.meta_mensal.label_tag }} {{ acao_form.meta_mensal }}</div>
                 <div>{{ acao_form.status.label_tag }} {{ acao_form.status }}</div>
             </div>
+            <div class="form-row single">{{ acao_form.responsavel.label_tag }} {{ acao_form.responsavel }}</div>
+            <div class="table-note">Responsavel da acao e quem responde pela execucao do plano. Nao precisa ser quem executa a tarefa no dia a dia.</div>
             <div class="modal-actions">
-                <a class="ghost-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}{% endif %}">Cancelar</a>
+                <a class="ghost-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}">Cancelar</a>
                 <button type="submit" class="primary-btn" formnovalidate>Confirmar</button>
             </div>
         </form>
@@ -110,7 +166,7 @@
     <div class="modal-card modal-wide">
         <div class="modal-header">
             <h3>Adicionar Profissional a Acao</h3>
-            <a href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}{% endif %}" class="modal-close">×</a>
+            <a href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}" class="modal-close">&times;</a>
         </div>
         <form method="post" class="modal-form" id="assignment-modal-form" novalidate>
             {% csrf_token %}
@@ -123,14 +179,56 @@
             </div>
             <div class="table-note">A soma dos valores mensais dos vinculos ativos nao pode ultrapassar o valor mensal da acao.</div>
             <div class="radio-row assignment-type-box">{{ atribuicao_form.tipo_destino }}</div>
-            <div class="form-grid">
-                <div id="profissional-field">{{ atribuicao_form.profissional.label_tag }} {{ atribuicao_form.profissional }}</div>
-                <div id="equipe-field">{{ atribuicao_form.equipe_destino.label_tag }} {{ atribuicao_form.equipe_destino }}</div>
+            <div class="assignment-entry-layout">
+                <div class="assignment-entry-main">
+                    <div id="profissional-field">{{ atribuicao_form.profissional.label_tag }} {{ atribuicao_form.profissional }}</div>
+                    <div id="equipe-field">{{ atribuicao_form.equipe_destino.label_tag }} {{ atribuicao_form.equipe_destino }}</div>
+                    <div class="assignment-value-field">{{ atribuicao_form.valor_mensal.label_tag }} {{ atribuicao_form.valor_mensal }}</div>
+                </div>
+                <div class="checkbox-field checkbox-field-tight">{{ atribuicao_form.ativo }} <label for="{{ atribuicao_form.ativo.id_for_label }}">Ativo</label></div>
             </div>
-            <div class="form-grid">
-                <div>{{ atribuicao_form.valor_mensal.label_tag }} {{ atribuicao_form.valor_mensal }}</div>
-                <div class="checkbox-field">{{ atribuicao_form.ativo }} <label for="{{ atribuicao_form.ativo.id_for_label }}">Ativo</label></div>
-            </div>
+            <section class="distribution-mode-panel" id="distribution-mode-panel" hidden>
+                <div class="distribution-mode-header">
+                    <div>
+                        <h4>Modo de distribuicao da equipe</h4>
+                        <p>Escolha entre dividir automaticamente a meta ou ajustar manualmente por membro.</p>
+                    </div>
+                    <div class="distribution-mode-toggle">
+                        <button type="button" class="mode-choice active" data-distribution-mode="automatico">
+                            <i class="bi bi-magic"></i>
+                            <span>Automatico</span>
+                        </button>
+                        <button type="button" class="mode-choice" data-distribution-mode="manual">
+                            <i class="bi bi-sliders"></i>
+                            <span>Manual</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="distribution-mode-card automatico active" data-distribution-card="automatico">
+                    <strong>Rateio automatico</strong>
+                    <p>O sistema divide o valor total da equipe de forma equilibrada entre os membros ativos, preservando o total da acao.</p>
+                    <div class="distribution-preview" id="automatic-distribution-preview">
+                        Selecione uma equipe para visualizar a sugestao automatica.
+                    </div>
+                </div>
+                <div class="distribution-mode-card manual" data-distribution-card="manual" hidden>
+                    <strong>Distribuicao manual</strong>
+                    <p>Defina quanto cada membro da equipe deve entregar neste mes. A soma precisa fechar exatamente no valor da equipe.</p>
+                    <div class="distribution-summary" id="manual-distribution-summary">
+                        <span class="summary-chip">Distribuido: 0</span>
+                        <span class="summary-chip">Saldo: 0</span>
+                    </div>
+                    <div class="manual-distribution-grid" id="manual-distribution-grid">
+                        <div class="empty-state-inline">Selecione uma equipe para distribuir a meta manualmente.</div>
+                    </div>
+                    <div class="distribution-actions">
+                        <button type="button" class="ghost-btn" id="apply-automatic-suggestion-btn">
+                            <i class="bi bi-stars"></i>
+                            Aplicar sugestao automatica
+                        </button>
+                    </div>
+                </div>
+            </section>
             <div id="assignment-inline-feedback" class="alert assignment-feedback" style="display: none;"></div>
             {% if atribuicao_form.errors %}
                 <div class="alert">Revise os campos do formulario antes de adicionar a atribuicao.</div>
@@ -142,6 +240,7 @@
                 <thead>
                     <tr>
                         <th>Profissionais / Equipes</th>
+                        <th>Modo</th>
                         <th>Valor Mensal</th>
                         <th>Status</th>
                         <th></th>
@@ -151,17 +250,24 @@
                     {% for atribuicao in atribuicoes_acao %}
                         <tr data-existing-key="{% if atribuicao.funcionario %}funcionario:{{ atribuicao.funcionario.id }}{% else %}equipe:{{ atribuicao.equipe.id }}{% endif %}" data-existing-value="{{ atribuicao.valor_mensal }}" data-existing-active="{% if atribuicao.ativo %}true{% else %}false{% endif %}">
                             <td>{% if atribuicao.funcionario %}{{ atribuicao.funcionario }}{% else %}{{ atribuicao.equipe.nome }}{% endif %}</td>
+                            <td>
+                                {% if atribuicao.funcionario %}
+                                    Individual
+                                {% else %}
+                                    {{ atribuicao.get_modo_rateio_display }}
+                                {% endif %}
+                            </td>
                             <td>{{ atribuicao.valor_mensal }}</td>
                             <td><span class="tag {% if atribuicao.ativo %}success{% else %}danger{% endif %}">{% if atribuicao.ativo %}Ativo{% else %}Desativado{% endif %}</span></td>
                             <td></td>
                         </tr>
                     {% empty %}
-                        <tr id="assignment-empty-row"><td colspan="4">Nenhuma atribuicao cadastrada.</td></tr>
+                        <tr id="assignment-empty-row"><td colspan="5">Nenhuma atribuicao cadastrada.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
             <div class="modal-actions">
-                <a class="ghost-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}{% endif %}">Cancelar</a>
+                <a class="ghost-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}">Cancelar</a>
                 <button type="button" class="primary-btn" id="confirm-assignments-btn">Confirmar</button>
             </div>
         </form>
@@ -169,7 +275,100 @@
 </section>
 {% endif %}
 
+{% if modal == 'detalhe_equipes' and acao_alvo_modal %}
+<section class="modal-backdrop">
+    <div class="modal-card modal-wide">
+        <div class="modal-header">
+            <h3>Equipes vinculadas a {{ acao_alvo_modal.nome }}</h3>
+            <a href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}" class="modal-close">&times;</a>
+        </div>
+        <div class="table-note">Nesta fase, a meta oficial fica na equipe. O detalhamento abaixo mostra como cada membro contribuiu para o realizado da competencia.</div>
+        <div class="team-detail-list">
+            {% for equipe in equipes_detalhe_modal %}
+                <article class="team-detail-card">
+                    <div class="team-detail-header">
+                        <div>
+                            <h4>{{ equipe.nome }}</h4>
+                            <p>{{ equipe.total_membros }} membro(s) acompanhados | Rateio {{ equipe.modo_rateio|lower }}</p>
+                        </div>
+                        <span class="tag {% if equipe.percentual_realizado >= 100 %}success{% elif equipe.percentual_realizado > 0 %}warning{% else %}danger{% endif %}">{{ equipe.percentual_realizado|floatformat:0 }}%</span>
+                    </div>
+                    <div class="team-detail-kpis">
+                        <div class="summary-chip">Meta da equipe: {{ equipe.meta_mensal }}</div>
+                        <div class="summary-chip">Realizado da equipe: {{ equipe.realizado_total }}</div>
+                    </div>
+                    <table class="compact-table team-detail-table">
+                        <thead>
+                            <tr>
+                                <th>Membro</th>
+                                <th>Funcao</th>
+                                <th>Meta individual</th>
+                                <th>Realizado</th>
+                                <th>%</th>
+                                <th>Status</th>
+                                <th>Ultima justificativa</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for membro in equipe.membros %}
+                                <tr>
+                                    <td>{{ membro.nome }}</td>
+                                    <td>{{ membro.funcao }}</td>
+                                    <td>{{ membro.meta_mensal }}</td>
+                                    <td>{{ membro.realizado_total }}</td>
+                                    <td>{{ membro.percentual_realizado|floatformat:0 }}%</td>
+                                    <td>{{ membro.situacao }}</td>
+                                    <td>{{ membro.ultima_justificativa }}</td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="7">Nenhum membro com tarefa desta acao foi encontrado para a equipe nesta competencia.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </article>
+            {% empty %}
+                <div class="empty-state-inline">Essa acao ainda nao possui equipes vinculadas para detalhamento.</div>
+            {% endfor %}
+        </div>
+        <div class="modal-actions">
+            <a class="ghost-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}">Fechar</a>
+        </div>
+    </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if modal %}
+<script>
+    (() => {
+        document.body.classList.add('modal-open');
+        const cleanup = () => document.body.classList.remove('modal-open');
+        window.addEventListener('pagehide', cleanup, { once: true });
+        window.addEventListener('beforeunload', cleanup, { once: true });
+    })();
+</script>
+{% endif %}
+<script>
+    (() => {
+        const monthInput = document.querySelector('[data-dashboard-month-input]');
+        const monthSwitcher = document.querySelector('[data-month-switcher]');
+        if (!monthInput || !monthSwitcher) {
+            return;
+        }
+        monthSwitcher.querySelectorAll('[data-month-target]').forEach((button) => {
+            button.addEventListener('click', () => {
+                monthInput.value = button.dataset.monthTarget;
+                monthInput.form.submit();
+            });
+        });
+    })();
+</script>
+
 {% if modal == 'atribuir_acao' and acao_alvo_modal %}
+{{ equipes_rateio_data|json_script:"equipes-rateio-data" }}
 <script>
     (() => {
         const tipoInputs = document.querySelectorAll('input[name="tipo_destino"]');
@@ -185,12 +384,127 @@
         const equipeSelect = document.getElementById('{{ atribuicao_form.equipe_destino.id_for_label }}');
         const valorMensalInput = document.getElementById('{{ atribuicao_form.valor_mensal.id_for_label }}');
         const ativoInput = document.getElementById('{{ atribuicao_form.ativo.id_for_label }}');
+        const addButtonLabel = document.getElementById('add-assignment-btn');
+        const distributionModePanel = document.getElementById('distribution-mode-panel');
+        const distributionButtons = document.querySelectorAll('[data-distribution-mode]');
+        const distributionCards = document.querySelectorAll('[data-distribution-card]');
+        const automaticPreview = document.getElementById('automatic-distribution-preview');
+        const manualGrid = document.getElementById('manual-distribution-grid');
+        const manualSummary = document.getElementById('manual-distribution-summary');
+        const applyAutomaticSuggestionBtn = document.getElementById('apply-automatic-suggestion-btn');
+        const equipeRateioNode = document.getElementById('equipes-rateio-data');
+        const equipesRateioData = equipeRateioNode ? JSON.parse(equipeRateioNode.textContent) : {};
         const acaoMetaMensal = parseFloat('{{ acao_alvo_modal.meta_mensal|default:0 }}'.replace(',', '.')) || 0;
         let pendingAssignments = [];
+        let distributionMode = 'automatico';
 
         if (!tipoInputs.length || !profissionalField || !equipeField || !addButton || !confirmButton || !assignmentForm || !pendingInput || !assignmentTableBody || !feedbackBox) {
             return;
         }
+
+        const parseValue = (value) => parseFloat(String(value || '0').replace(',', '.')) || 0;
+
+        const toBrazilianNumber = (value) => new Intl.NumberFormat('pt-BR', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2,
+        }).format(Number(value || 0));
+
+        const getSelectedTeamMembers = () => {
+            const teamId = equipeSelect && equipeSelect.value ? equipeSelect.value : '';
+            return teamId ? (equipesRateioData[teamId] || []) : [];
+        };
+
+        const automaticDistributionSuggestion = (total, members) => {
+            if (!members.length) {
+                return [];
+            }
+            const totalNumber = Math.max(0, Math.floor(parseValue(total)));
+            const base = Math.floor(totalNumber / members.length);
+            const remainder = totalNumber - (base * members.length);
+            return members.map((member, index) => ({
+                funcionario_id: String(member.id),
+                nome: member.nome,
+                valor_mensal: index >= members.length - remainder ? base + 1 : base,
+            }));
+        };
+
+        const getManualDistributionRows = () => Array.from(document.querySelectorAll('[data-manual-distribution-row]'));
+
+        const collectManualDistribution = () => getManualDistributionRows().map((row) => {
+            const input = row.querySelector('input');
+            return {
+                funcionario_id: row.dataset.funcionarioId,
+                nome: row.dataset.funcionarioNome,
+                valor_mensal: input ? input.value : '0',
+            };
+        });
+
+        const updateManualSummary = () => {
+            if (!manualSummary) {
+                return;
+            }
+            const totalEquipe = parseValue(valorMensalInput ? valorMensalInput.value : 0);
+            const distribuido = collectManualDistribution().reduce((acc, item) => acc + parseValue(item.valor_mensal), 0);
+            const saldo = totalEquipe - distribuido;
+            manualSummary.innerHTML = `
+                <span class="summary-chip">Distribuido: ${toBrazilianNumber(distribuido)}</span>
+                <span class="summary-chip">Saldo: ${toBrazilianNumber(saldo)}</span>
+            `;
+        };
+
+        const renderAutomaticPreview = () => {
+            if (!automaticPreview) {
+                return;
+            }
+            const members = getSelectedTeamMembers();
+            if (!members.length) {
+                automaticPreview.innerHTML = 'Selecione uma equipe para visualizar a sugestao automatica.';
+                return;
+            }
+            const suggestion = automaticDistributionSuggestion(valorMensalInput ? valorMensalInput.value : 0, members);
+            automaticPreview.innerHTML = suggestion.map((item) => `
+                <span class="distribution-pill">${item.nome}: ${toBrazilianNumber(item.valor_mensal)}</span>
+            `).join('');
+        };
+
+        const renderManualDistribution = (distributionValues = null) => {
+            if (!manualGrid) {
+                return;
+            }
+            const members = getSelectedTeamMembers();
+            if (!members.length) {
+                manualGrid.innerHTML = '<div class="empty-state-inline">Selecione uma equipe para distribuir a meta manualmente.</div>';
+                updateManualSummary();
+                return;
+            }
+            const defaults = distributionValues || automaticDistributionSuggestion(valorMensalInput ? valorMensalInput.value : 0, members);
+            const defaultsMap = Object.fromEntries(defaults.map((item) => [String(item.funcionario_id), item.valor_mensal]));
+            manualGrid.innerHTML = members.map((member) => `
+                <div class="manual-distribution-row" data-manual-distribution-row data-funcionario-id="${member.id}" data-funcionario-nome="${member.nome}">
+                    <span>${member.nome}</span>
+                    <input type="number" step="1" min="0" value="${defaultsMap[String(member.id)] ?? 0}">
+                </div>
+            `).join('');
+            getManualDistributionRows().forEach((row) => {
+                const input = row.querySelector('input');
+                if (input) {
+                    input.addEventListener('input', updateManualSummary);
+                }
+            });
+            updateManualSummary();
+        };
+
+        const setDistributionMode = (mode) => {
+            distributionMode = mode;
+            distributionButtons.forEach((button) => {
+                button.classList.toggle('active', button.dataset.distributionMode === mode);
+            });
+            distributionCards.forEach((card) => {
+                const active = card.dataset.distributionCard === mode;
+                card.hidden = !active;
+                card.classList.toggle('active', active);
+            });
+        };
 
         const showFeedback = (message) => {
             feedbackBox.textContent = message;
@@ -239,7 +553,7 @@
             if (!hasVisibleRows) {
                 const row = document.createElement('tr');
                 row.id = 'assignment-empty-row';
-                row.innerHTML = '<td colspan="4">Nenhuma atribuicao cadastrada.</td>';
+                row.innerHTML = '<td colspan="5">Nenhuma atribuicao cadastrada.</td>';
                 assignmentTableBody.appendChild(row);
             }
         };
@@ -250,6 +564,7 @@
             row.dataset.pendingIndex = index;
             row.innerHTML = `
                 <td>${item.nome_exibicao}</td>
+                <td>${item.modo_label || 'Individual'}</td>
                 <td>${item.valor_mensal}</td>
                 <td><span class="tag ${item.ativo ? 'success' : 'danger'}">${item.ativo ? 'Ativo' : 'Desativado'}</span></td>
                 <td><button type="button" class="ghost-chip remove-assignment-btn">Remover</button></td>
@@ -269,9 +584,39 @@
             const tipo = selected ? selected.value : 'funcionario';
             profissionalField.style.display = tipo === 'funcionario' ? 'block' : 'none';
             equipeField.style.display = tipo === 'equipe' ? 'block' : 'none';
+            if (addButtonLabel) {
+                addButtonLabel.textContent = tipo === 'equipe' ? 'Adicionar Equipe' : 'Adicionar Profissional';
+            }
+            if (distributionModePanel) {
+                distributionModePanel.hidden = tipo !== 'equipe';
+            }
+            if (tipo === 'equipe') {
+                renderAutomaticPreview();
+                renderManualDistribution();
+            }
         };
 
         tipoInputs.forEach((input) => input.addEventListener('change', updateDestinoFields));
+        distributionButtons.forEach((button) => {
+            button.addEventListener('click', () => setDistributionMode(button.dataset.distributionMode));
+        });
+        if (equipeSelect) {
+            equipeSelect.addEventListener('change', () => {
+                renderAutomaticPreview();
+                renderManualDistribution();
+            });
+        }
+        if (valorMensalInput) {
+            valorMensalInput.addEventListener('input', () => {
+                renderAutomaticPreview();
+                renderManualDistribution(collectManualDistribution());
+            });
+        }
+        if (applyAutomaticSuggestionBtn) {
+            applyAutomaticSuggestionBtn.addEventListener('click', () => {
+                renderManualDistribution();
+            });
+        }
         addButton.addEventListener('click', () => {
             clearFeedback();
             const selected = document.querySelector('input[name="tipo_destino"]:checked');
@@ -298,7 +643,24 @@
                 nome_exibicao: selectedOption.text,
                 valor_mensal: valorMensalInput.value,
                 ativo: Boolean(ativoInput && ativoInput.checked),
+                modo_rateio: isFuncionario ? 'automatico' : distributionMode,
+                modo_label: isFuncionario ? 'Individual' : (distributionMode === 'manual' ? 'Manual' : 'Automatico'),
             };
+
+            if (!isFuncionario && distributionMode === 'manual') {
+                const distribuicoes = collectManualDistribution();
+                const distribuido = distribuicoes.reduce((acc, current) => acc + parseValue(current.valor_mensal), 0);
+                const totalEquipe = parseValue(valorMensalInput.value);
+                if (distribuicoes.some((current) => String(current.valor_mensal).trim() === '')) {
+                    showFeedback('Preencha todos os valores da distribuicao manual antes de adicionar.');
+                    return;
+                }
+                if (distribuido !== totalEquipe) {
+                    showFeedback('Na distribuicao manual, a soma dos membros precisa ser igual ao valor mensal da equipe.');
+                    return;
+                }
+                item.distribuicoes = distribuicoes;
+            }
 
             const existsInSavedRows = Boolean(assignmentTableBody.querySelector(`tr[data-existing-key="${item.key}"]`));
             if (existsInSavedRows) {
@@ -363,6 +725,7 @@
         });
 
         updateDestinoFields();
+        setDistributionMode('automatico');
         rebuildPendingRows();
     })();
 </script>

@@ -1,12 +1,13 @@
 import json
-from datetime import date, datetime
-from decimal import Decimal
+from datetime import date, datetime, timedelta
+from decimal import Decimal, ROUND_DOWN
 from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.db import models
+from django.db import transaction
 from django.db.models import Count, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -25,6 +26,7 @@ from .forms import (
 )
 from .models import (
     AcaoAtribuicao,
+    AcaoAtribuicaoDistribuicao,
     AcaoMelhoria,
     Cliente,
     Diagnostico,
@@ -32,6 +34,7 @@ from .models import (
     Funcionario,
     Indicador,
     IndicadorHistoricoMensal,
+    IndicadorMetaVigencia,
     PerfilUsuario,
     RegistroDiario,
     Tarefa,
@@ -80,6 +83,65 @@ def _formatar_competencia(competencia, incluir_ano=True):
     return f"{nome_mes} de {competencia.year}" if incluir_ano else nome_mes
 
 
+def _normalizar_competencia(data_referencia):
+    return data_referencia.replace(day=1)
+
+
+def _meta_vigente_indicador(indicador, competencia=None):
+    if not indicador:
+        return Decimal("0")
+    competencia = _normalizar_competencia(competencia or timezone.localdate())
+    vigencia = (
+        indicador.meta_vigencias.filter(inicio_vigencia__lte=competencia)
+        .filter(models.Q(fim_vigencia__isnull=True) | models.Q(fim_vigencia__gte=competencia))
+        .order_by("-inicio_vigencia")
+        .first()
+    )
+    if vigencia:
+        return vigencia.valor_meta
+    return indicador.meta_valor or Decimal("0")
+
+
+def _registrar_meta_vigencia(indicador, valor_meta, inicio_vigencia):
+    if not indicador:
+        return None
+
+    inicio_vigencia = _normalizar_competencia(inicio_vigencia)
+
+    with transaction.atomic():
+        vigencia_anterior = (
+            indicador.meta_vigencias.filter(inicio_vigencia__lt=inicio_vigencia)
+            .order_by("-inicio_vigencia")
+            .first()
+        )
+        if vigencia_anterior and (
+            vigencia_anterior.fim_vigencia is None or vigencia_anterior.fim_vigencia >= inicio_vigencia
+        ):
+            vigencia_anterior.fim_vigencia = inicio_vigencia - timedelta(days=1)
+            vigencia_anterior.save(update_fields=["fim_vigencia", "updated_at"])
+
+        proxima_vigencia = (
+            indicador.meta_vigencias.filter(inicio_vigencia__gt=inicio_vigencia)
+            .order_by("inicio_vigencia")
+            .first()
+        )
+        fim_vigencia = proxima_vigencia.inicio_vigencia - timedelta(days=1) if proxima_vigencia else None
+
+        vigencia, _ = IndicadorMetaVigencia.objects.update_or_create(
+            indicador=indicador,
+            inicio_vigencia=inicio_vigencia,
+            defaults={
+                "valor_meta": valor_meta,
+                "fim_vigencia": fim_vigencia,
+            },
+        )
+
+        indicador.meta_valor = _meta_vigente_indicador(indicador, timezone.localdate())
+        indicador.save(update_fields=["meta_valor", "updated_at"])
+
+    return vigencia
+
+
 def _percentual(realizado, meta):
     realizado_decimal = Decimal(str(realizado or 0))
     meta_decimal = Decimal(str(meta or 0))
@@ -92,16 +154,17 @@ def _snapshot_indicador(indicador, competencia, historicos_map=None, competencia
     historicos_map = historicos_map or {}
     historico = historicos_map.get(indicador.id)
     competencia_atual = competencia_atual or timezone.localdate().replace(day=1)
+    meta_vigente = _meta_vigente_indicador(indicador, competencia)
 
     if historico:
         valor = historico.valor
-        meta = historico.meta or indicador.meta_valor
+        meta = historico.meta or meta_vigente
     elif competencia == competencia_atual:
         valor = indicador.valor_atual
-        meta = indicador.meta_valor
+        meta = meta_vigente
     else:
         valor = Decimal("0")
-        meta = indicador.meta_valor
+        meta = meta_vigente
 
     return {
         "valor": valor,
@@ -122,7 +185,7 @@ def _snapshot_indicador_por_registros(indicador, competencia):
         ).aggregate(total=Sum("quantidade_realizada"))["total"]
         or Decimal("0")
     )
-    meta = indicador.meta_valor or Decimal("0")
+    meta = _meta_vigente_indicador(indicador, competencia)
     return {
         "valor": valor,
         "meta": meta,
@@ -143,23 +206,40 @@ def _sincronizar_indicador_competencia(indicador, competencia=None):
         ).aggregate(total=Sum("quantidade_realizada"))["total"]
         or Decimal("0")
     )
+    meta_vigente = _meta_vigente_indicador(indicador, competencia)
     historico, _ = IndicadorHistoricoMensal.objects.update_or_create(
         indicador=indicador,
         competencia=competencia,
         defaults={
             "valor": valor_total,
-            "meta": indicador.meta_valor,
+            "meta": meta_vigente,
         },
     )
     if competencia == timezone.localdate().replace(day=1):
         indicador.valor_atual = valor_total
-        indicador.save(update_fields=["valor_atual", "updated_at"])
+        indicador.meta_valor = _meta_vigente_indicador(indicador, timezone.localdate())
+        indicador.save(update_fields=["valor_atual", "meta_valor", "updated_at"])
     return historico
 
 
 def _perfil_usuario(request, membership=None):
+    cliente = membership.cliente if membership and membership.cliente_id else None
+    tem_vinculo_funcionario = (
+        request.user.vinculos_funcionario.filter(cliente=cliente, ativo=True).exists()
+        if cliente
+        else False
+    )
+    modo_map = request.session.get("profile_mode_overrides", {})
+    modo_preferido = modo_map.get(str(cliente.id)) if cliente else None
+
     if request.user.is_superuser:
         return "admin"
+
+    if membership and membership.tipo != PerfilUsuario.TipoPerfil.FUNCIONARIO and tem_vinculo_funcionario:
+        if modo_preferido == PerfilUsuario.TipoPerfil.FUNCIONARIO:
+            return PerfilUsuario.TipoPerfil.FUNCIONARIO
+        return membership.tipo
+
     if membership:
         return membership.tipo
     perfil = getattr(request.user, "perfil", None)
@@ -214,6 +294,18 @@ def _cliente_contexto(request):
 
 def _base_context(request, pagina):
     perfil, cliente, clientes = _cliente_contexto(request)
+    funcionario_contexto = _funcionario_no_contexto(request, cliente)
+    membership_contexto = None
+    if request.user.is_authenticated and cliente and not request.user.is_superuser:
+        membership_contexto = (
+            UsuarioCliente.objects.filter(user=request.user, cliente=cliente, ativo=True)
+            .select_related("cliente")
+            .first()
+        )
+    pode_modo_funcionario = funcionario_contexto is not None
+    pode_modo_gestor = request.user.is_superuser or (
+        membership_contexto is not None and membership_contexto.tipo != PerfilUsuario.TipoPerfil.FUNCIONARIO
+    )
     try:
         clientes_count = clientes.count()
     except TypeError:
@@ -225,6 +317,10 @@ def _base_context(request, pagina):
         "clientes_menu": clientes,
         "clientes_menu_count": clientes_count,
         "permitir_troca_cliente": perfil == "admin" or clientes_count > 1,
+        "funcionario_atual": funcionario_contexto,
+        "modo_hibrido_disponivel": pode_modo_funcionario and pode_modo_gestor,
+        "pode_entrar_como_funcionario": pode_modo_funcionario,
+        "pode_entrar_como_gestor": pode_modo_gestor,
         "modal": request.GET.get("modal", ""),
     }
 
@@ -244,8 +340,7 @@ def _funcionario_no_contexto(request, cliente):
 
 def _worker_context(request, pagina):
     context = _base_context(request, pagina)
-    funcionario = _funcionario_no_contexto(request, context["cliente_atual"])
-    context["funcionario_atual"] = funcionario
+    funcionario = context["funcionario_atual"]
     context["worker_mode"] = context["perfil_tipo"] == "funcionario" and funcionario is not None
     return context
 
@@ -265,21 +360,41 @@ def _salvar_atribuicoes_pendentes(cliente, acao, raw_payload):
     atribuicoes_validas = []
     alocacoes_ativas = {}
 
-    def garantir_tarefa_para_funcionario(funcionario, atribuicao):
+    def ratear_valor_equipe(valor_total, quantidade_membros):
+        if quantidade_membros <= 0:
+            return []
+
+        total = Decimal(str(valor_total or 0))
+        total_inteiro = int(total.quantize(Decimal("1"), rounding=ROUND_DOWN))
+        base_inteira = total_inteiro // quantidade_membros
+        resto_inteiro = total_inteiro - (base_inteira * quantidade_membros)
+        valores = [Decimal(str(base_inteira)) for _ in range(quantidade_membros)]
+
+        for indice in range(1, resto_inteiro + 1):
+            valores[-indice] += Decimal("1")
+
+        resto_decimal = total - Decimal(str(total_inteiro))
+        if resto_decimal > 0:
+            valores[-1] += resto_decimal
+
+        return valores
+
+    def garantir_tarefa_para_funcionario(funcionario, atribuicao, valor_meta=None):
         nonlocal tarefas_criadas
         tarefa_existente = Tarefa.objects.filter(acao=acao, funcionario=funcionario).order_by("id").first()
+        valor_tarefa = valor_meta if valor_meta is not None else atribuicao.valor_mensal
         defaults = {
             "titulo": acao.nome,
             "descricao": acao.descricao or f"Tarefa gerada automaticamente a partir da acao '{acao.nome}'.",
-            "meta_quantidade": atribuicao.valor_mensal,
-            "previsto_quantidade": atribuicao.valor_mensal,
+            "meta_quantidade": valor_tarefa,
+            "previsto_quantidade": valor_tarefa,
             "situacao": Tarefa.Situacao.PENDENTE,
             "concluida": False,
         }
 
         if tarefa_existente:
-            tarefa_existente.meta_quantidade = atribuicao.valor_mensal
-            tarefa_existente.previsto_quantidade = atribuicao.valor_mensal
+            tarefa_existente.meta_quantidade = valor_tarefa
+            tarefa_existente.previsto_quantidade = valor_tarefa
             tarefa_existente.save(update_fields=["meta_quantidade", "previsto_quantidade", "updated_at"])
             return
 
@@ -289,6 +404,46 @@ def _salvar_atribuicoes_pendentes(cliente, acao, raw_payload):
             **defaults,
         )
         tarefas_criadas += 1
+
+    def validar_distribuicao_manual(atribuicao, distribuicoes_payload):
+        membros_ativos = list(atribuicao.equipe.funcionarios.filter(ativo=True).order_by("id"))
+        membros_map = {str(membro.id): membro for membro in membros_ativos}
+        membros_ids = set(membros_map.keys())
+
+        if not membros_ativos:
+            return None, "A equipe selecionada nao possui membros ativos para distribuir a meta."
+        if not isinstance(distribuicoes_payload, list):
+            return None, "A distribuicao manual enviada para a equipe esta em formato invalido."
+
+        distribuicoes = []
+        vistos = set()
+        total_distribuido = Decimal("0")
+
+        for item in distribuicoes_payload:
+            funcionario_id = str(item.get("funcionario_id") or "")
+            if funcionario_id not in membros_map:
+                return None, "A distribuicao manual contem um membro que nao pertence a equipe selecionada."
+            if funcionario_id in vistos:
+                return None, "Um mesmo membro foi informado mais de uma vez na distribuicao manual."
+
+            try:
+                valor = Decimal(str(item.get("valor_mensal") or 0))
+            except Exception:
+                return None, "Um dos valores da distribuicao manual e invalido."
+
+            if valor < 0:
+                return None, "Nao e permitido informar valores negativos na distribuicao manual."
+
+            distribuicoes.append({"funcionario": membros_map[funcionario_id], "valor_mensal": valor})
+            total_distribuido += valor
+            vistos.add(funcionario_id)
+
+        if vistos != membros_ids:
+            return None, "A distribuicao manual precisa contemplar todos os membros ativos da equipe."
+        if total_distribuido != atribuicao.valor_mensal:
+            return None, "A soma da distribuicao manual precisa ser igual ao valor mensal informado para a equipe."
+
+        return distribuicoes, None
 
     existentes = AcaoAtribuicao.objects.filter(acao=acao)
     for atribuicao_existente in existentes:
@@ -316,35 +471,67 @@ def _salvar_atribuicoes_pendentes(cliente, acao, raw_payload):
             continue
 
         atribuicao = atribuicao_form.save(commit=False, acao=acao)
+        atribuicao.modo_rateio = item.get("modo_rateio") or AcaoAtribuicao.ModoRateio.AUTOMATICO
         if atribuicao.funcionario_id:
             chave = f"funcionario:{atribuicao.funcionario_id}"
         else:
             chave = f"equipe:{atribuicao.equipe_id}"
         alocacoes_ativas[chave] = float(atribuicao.valor_mensal) if atribuicao.ativo else 0.0
-        atribuicoes_validas.append(atribuicao)
+        distribuicoes_manuais = []
+        if atribuicao.equipe_id and atribuicao.modo_rateio == AcaoAtribuicao.ModoRateio.MANUAL:
+            distribuicoes_manuais, erro_distribuicao = validar_distribuicao_manual(
+                atribuicao,
+                item.get("distribuicoes", []),
+            )
+            if erro_distribuicao:
+                erros.append(erro_distribuicao)
+                continue
+        atribuicoes_validas.append((atribuicao, distribuicoes_manuais))
 
     total_alocado = sum(alocacoes_ativas.values())
     if total_alocado > float(acao.meta_mensal):
         return 0, 0, [f"A soma dos valores mensais vinculados nao pode ultrapassar {acao.meta_mensal}."]
 
-    for atribuicao in atribuicoes_validas:
+    for atribuicao, distribuicoes_manuais in atribuicoes_validas:
         lookup = {"acao": acao}
         if atribuicao.funcionario_id:
             lookup["funcionario"] = atribuicao.funcionario
         else:
             lookup["equipe"] = atribuicao.equipe
 
-        AcaoAtribuicao.objects.update_or_create(
+        atribuicao_salva, _ = AcaoAtribuicao.objects.update_or_create(
             **lookup,
-            defaults={"valor_mensal": atribuicao.valor_mensal, "ativo": atribuicao.ativo},
+            defaults={
+                "valor_mensal": atribuicao.valor_mensal,
+                "ativo": atribuicao.ativo,
+                "modo_rateio": atribuicao.modo_rateio,
+            },
         )
+        atribuicao_salva.distribuicoes.all().delete()
+        if distribuicoes_manuais:
+            for distribuicao in distribuicoes_manuais:
+                AcaoAtribuicaoDistribuicao.objects.create(
+                    atribuicao=atribuicao_salva,
+                    funcionario=distribuicao["funcionario"],
+                    valor_mensal=distribuicao["valor_mensal"],
+                )
         salvos += 1
         if atribuicao.ativo:
             if atribuicao.funcionario_id:
                 garantir_tarefa_para_funcionario(atribuicao.funcionario, atribuicao)
             elif atribuicao.equipe_id:
-                for membro in atribuicao.equipe.funcionarios.filter(ativo=True):
-                    garantir_tarefa_para_funcionario(membro, atribuicao)
+                membros_ativos = list(atribuicao.equipe.funcionarios.filter(ativo=True).order_by("id"))
+                if atribuicao.modo_rateio == AcaoAtribuicao.ModoRateio.MANUAL:
+                    for distribuicao in distribuicoes_manuais:
+                        garantir_tarefa_para_funcionario(
+                            distribuicao["funcionario"],
+                            atribuicao,
+                            distribuicao["valor_mensal"],
+                        )
+                else:
+                    rateio = ratear_valor_equipe(atribuicao.valor_mensal, len(membros_ativos))
+                    for membro, valor_rateado in zip(membros_ativos, rateio):
+                        garantir_tarefa_para_funcionario(membro, atribuicao, valor_rateado)
 
     return salvos, tarefas_criadas, erros
 
@@ -408,9 +595,37 @@ def login_organizacao_view(request):
 
 def logout_view(request):
     logout(request)
-    for key in ["cliente_contexto_id", "login_org_code", "login_cliente_id", "login_master_access"]:
+    for key in ["cliente_contexto_id", "login_org_code", "login_cliente_id", "login_master_access", "profile_mode_overrides"]:
         request.session.pop(key, None)
     return redirect("select-organization")
+
+
+@login_required
+def alternar_modo_view(request):
+    cliente = Cliente.objects.filter(pk=request.session.get("cliente_contexto_id")).first()
+    if not cliente:
+        return redirect("dashboard")
+
+    destino = request.POST.get("modo")
+    overrides = request.session.get("profile_mode_overrides", {})
+    membership = (
+        UsuarioCliente.objects.filter(user=request.user, cliente=cliente, ativo=True)
+        .select_related("cliente")
+        .first()
+    )
+    tem_vinculo_funcionario = request.user.vinculos_funcionario.filter(cliente=cliente, ativo=True).exists()
+    tem_vinculo_gestor = request.user.is_superuser or (
+        membership is not None and membership.tipo != PerfilUsuario.TipoPerfil.FUNCIONARIO
+    )
+
+    if destino == PerfilUsuario.TipoPerfil.FUNCIONARIO and tem_vinculo_funcionario:
+        overrides[str(cliente.id)] = PerfilUsuario.TipoPerfil.FUNCIONARIO
+    elif destino in {"gestor", PerfilUsuario.TipoPerfil.CLIENTE, "admin"} and tem_vinculo_gestor:
+        overrides[str(cliente.id)] = "gestor"
+
+    request.session["profile_mode_overrides"] = overrides
+    next_url = request.POST.get("next") or reverse("dashboard")
+    return redirect(next_url)
 
 
 @login_required
@@ -830,23 +1045,48 @@ def indicadores_view(request):
     diagnostico_id = request.GET.get("diagnostico")
     diagnostico = diagnosticos.filter(pk=diagnostico_id).first() or diagnosticos.first()
     indicadores = (
-        Indicador.objects.filter(diagnostico=diagnostico).prefetch_related("acoes")
+        Indicador.objects.filter(diagnostico=diagnostico).prefetch_related("acoes", "meta_vigencias")
         if diagnostico
         else Indicador.objects.none()
     )
     if request.method == "POST" and diagnostico:
-        indicador_form = IndicadorForm(request.POST)
-        if indicador_form.is_valid():
-            indicador = indicador_form.save(commit=False)
-            indicador.diagnostico = diagnostico
-            indicador.save()
-            _sincronizar_indicador_competencia(indicador)
-            messages.success(request, "Indicador cadastrado com sucesso.")
-            return _redirect_with_query(
-                "indicadores",
-                {"cliente": cliente.id if context["perfil_tipo"] == "admin" else None, "diagnostico": diagnostico.id},
-            )
-        context["indicador_form"] = indicador_form
+        if request.POST.get("form_name") == "editar_indicador":
+            indicador_obj = get_object_or_404(indicadores, pk=request.POST.get("indicador_id"))
+            indicador_edicao_form = IndicadorForm(request.POST, instance=indicador_obj)
+            if indicador_edicao_form.is_valid():
+                indicador = indicador_edicao_form.save()
+                _registrar_meta_vigencia(
+                    indicador,
+                    indicador_edicao_form.cleaned_data["meta_valor"],
+                    indicador_edicao_form.cleaned_data["vigencia_inicio"],
+                )
+                _sincronizar_indicador_competencia(indicador)
+                messages.success(request, "Indicador atualizado com sucesso.")
+                return _redirect_with_query(
+                    "indicadores",
+                    {"cliente": cliente.id if context["perfil_tipo"] == "admin" else None, "diagnostico": diagnostico.id},
+                )
+            context["indicador_form"] = IndicadorForm()
+            context["indicador_edicao_form"] = indicador_edicao_form
+            context["indicador_alvo_modal"] = indicador_obj
+        else:
+            indicador_form = IndicadorForm(request.POST)
+            if indicador_form.is_valid():
+                indicador = indicador_form.save(commit=False)
+                indicador.diagnostico = diagnostico
+                indicador.save()
+                _registrar_meta_vigencia(
+                    indicador,
+                    indicador_form.cleaned_data["meta_valor"],
+                    indicador_form.cleaned_data["vigencia_inicio"],
+                )
+                _sincronizar_indicador_competencia(indicador)
+                messages.success(request, "Indicador cadastrado com sucesso.")
+                return _redirect_with_query(
+                    "indicadores",
+                    {"cliente": cliente.id if context["perfil_tipo"] == "admin" else None, "diagnostico": diagnostico.id},
+                )
+            context["indicador_form"] = indicador_form
     else:
         context["indicador_form"] = IndicadorForm()
     indicador_alvo_modal = indicadores.filter(pk=request.GET.get("indicador")).first() or indicadores.first()
@@ -856,6 +1096,7 @@ def indicadores_view(request):
             "diagnostico_selecionado": diagnostico,
             "indicadores": indicadores,
             "indicador_alvo_modal": indicador_alvo_modal,
+            "indicador_edicao_form": IndicadorForm(instance=indicador_alvo_modal) if indicador_alvo_modal else IndicadorForm(),
             "historicos_indicadores": IndicadorHistoricoMensal.objects.filter(indicador__in=indicadores[:8])[:12],
         }
     )
@@ -866,16 +1107,33 @@ def indicadores_view(request):
 def acoes_view(request):
     context = _base_context(request, "acoes")
     cliente = context["cliente_atual"]
+    competencia = _parse_competencia(request.GET.get("competencia"))
+    competencia_final = _proxima_competencia(competencia)
+    competencia_anterior = _competencia_anterior(competencia)
+    competencia_proxima = _proxima_competencia(competencia)
     diagnosticos = Diagnostico.objects.filter(cliente=cliente) if cliente else Diagnostico.objects.none()
     diagnostico_id = request.GET.get("diagnostico")
     diagnostico = diagnosticos.filter(pk=diagnostico_id).first() or diagnosticos.first()
     indicadores = Indicador.objects.filter(diagnostico=diagnostico) if diagnostico else Indicador.objects.none()
     indicador_id = request.GET.get("indicador")
     indicador = indicadores.filter(pk=indicador_id).first() or indicadores.first()
-    acoes = AcaoMelhoria.objects.filter(indicador=indicador) if indicador else AcaoMelhoria.objects.none()
+    acoes = (
+        AcaoMelhoria.objects.filter(indicador=indicador)
+        .select_related("responsavel")
+        .prefetch_related(
+            "tarefas__registros",
+            "tarefas__funcionario__user",
+            "tarefas__funcionario__equipe",
+            "atribuicoes__funcionario__user",
+            "atribuicoes__equipe",
+            "atribuicoes__distribuicoes__funcionario__user",
+        )
+        if indicador
+        else AcaoMelhoria.objects.none()
+    )
     if request.method == "POST" and cliente:
         if request.POST.get("form_name") == "nova_acao" and indicador:
-            acao_form = AcaoForm(request.POST)
+            acao_form = AcaoForm(request.POST, cliente=cliente)
             atribuicao_form = AtribuicaoAcaoForm(cliente=cliente)
             if acao_form.is_valid():
                 acao = acao_form.save(commit=False)
@@ -888,11 +1146,12 @@ def acoes_view(request):
                         "cliente": cliente.id if context["perfil_tipo"] == "admin" else None,
                         "diagnostico": diagnostico.id if diagnostico else None,
                         "indicador": indicador.id,
+                        "competencia": competencia.strftime("%Y-%m"),
                     },
                 )
         else:
             acao_alvo = get_object_or_404(acoes, pk=request.POST.get("acao_id"))
-            acao_form = AcaoForm()
+            acao_form = AcaoForm(cliente=cliente)
             atribuicao_form = AtribuicaoAcaoForm(cliente=cliente)
             salvos, tarefas_criadas, erros = _salvar_atribuicoes_pendentes(cliente, acao_alvo, request.POST.get("pending_assignments"))
             if salvos:
@@ -906,6 +1165,7 @@ def acoes_view(request):
                         "cliente": cliente.id if context["perfil_tipo"] == "admin" else None,
                         "diagnostico": diagnostico.id if diagnostico else None,
                         "indicador": indicador.id if indicador else None,
+                        "competencia": competencia.strftime("%Y-%m"),
                     },
                 )
             if erros:
@@ -913,18 +1173,131 @@ def acoes_view(request):
         context["acao_form"] = acao_form
         context["atribuicao_form"] = atribuicao_form
     else:
-        context["acao_form"] = AcaoForm()
+        context["acao_form"] = AcaoForm(cliente=cliente)
         context["atribuicao_form"] = AtribuicaoAcaoForm(cliente=cliente)
     acao_alvo_modal = acoes.filter(pk=request.GET.get("acao")).first() or acoes.first()
+    equipes_detalhe_modal = []
+    equipes_rateio_data = {}
+    if cliente:
+        equipes_qs = Equipe.objects.filter(cliente=cliente).prefetch_related("funcionarios__user")
+        for equipe in equipes_qs:
+            equipes_rateio_data[str(equipe.id)] = [
+                {
+                    "id": funcionario.id,
+                    "nome": str(funcionario),
+                }
+                for funcionario in equipe.funcionarios.filter(ativo=True).order_by("id")
+            ]
+    indicador_snapshot = _snapshot_indicador_por_registros(indicador, competencia) if indicador else {"valor": Decimal("0"), "meta": Decimal("0"), "percentual": Decimal("0")}
+    acoes_lista = []
+    for acao in acoes:
+        tarefas_acao = list(acao.tarefas.all())
+        registros_competencia = [
+            registro
+            for tarefa in tarefas_acao
+            for registro in tarefa.registros.all()
+            if competencia <= registro.data < competencia_final
+        ]
+        realizado_total = sum((registro.quantidade_realizada for registro in registros_competencia), Decimal("0"))
+        percentual_realizado = _percentual(realizado_total, acao.meta_mensal)
+        atribuicoes_acao = list(acao.atribuicoes.all())
+        atribuicoes_profissionais = [item for item in atribuicoes_acao if item.funcionario_id]
+        atribuicoes_equipes = [item for item in atribuicoes_acao if item.equipe_id]
+        acoes_lista.append(
+            {
+                "obj": acao,
+                "id": acao.id,
+                "nome": acao.nome,
+                "meta_mensal": acao.meta_mensal,
+                "status": acao.status,
+                "status_display": acao.get_status_display(),
+                "responsavel": acao.responsavel,
+                "realizado_total": realizado_total,
+                "percentual_realizado": percentual_realizado,
+                "total_atribuicoes_profissionais": len(atribuicoes_profissionais),
+                "total_atribuicoes_equipes": len(atribuicoes_equipes),
+                "possui_equipes": bool(atribuicoes_equipes),
+            }
+        )
+
+    if acao_alvo_modal:
+        atribuicoes_equipes_modal = [
+            atribuicao
+            for atribuicao in acao_alvo_modal.atribuicoes.all()
+            if atribuicao.equipe_id
+        ]
+        tarefas_acao_modal = list(acao_alvo_modal.tarefas.all())
+        for atribuicao in atribuicoes_equipes_modal:
+            membros_ids_manuais = {
+                distribuicao.funcionario_id: distribuicao.valor_mensal
+                for distribuicao in atribuicao.distribuicoes.all()
+            }
+            tarefas_equipe = [
+                tarefa
+                for tarefa in tarefas_acao_modal
+                if tarefa.funcionario and tarefa.funcionario.equipe_id == atribuicao.equipe_id
+            ]
+            membros = []
+            for tarefa in tarefas_equipe:
+                registros_membro = [
+                    registro
+                    for registro in tarefa.registros.all()
+                    if competencia <= registro.data < competencia_final
+                ]
+                realizado_membro = sum((registro.quantidade_realizada for registro in registros_membro), Decimal("0"))
+                ultima_justificativa = next(
+                    (registro.justificativa for registro in registros_membro if registro.justificativa),
+                    "",
+                )
+                meta_oficial_membro = membros_ids_manuais.get(tarefa.funcionario_id, tarefa.meta_quantidade)
+                membros.append(
+                    {
+                        "id": tarefa.funcionario_id,
+                        "nome": str(tarefa.funcionario),
+                        "funcao": tarefa.funcionario.funcao or "Sem funcao definida",
+                        "meta_mensal": meta_oficial_membro,
+                        "realizado_total": realizado_membro,
+                        "percentual_realizado": _percentual(realizado_membro, meta_oficial_membro),
+                        "situacao": tarefa.get_situacao_display(),
+                        "ultima_justificativa": ultima_justificativa or "Sem justificativa registrada no mes.",
+                    }
+                )
+
+            membros.sort(key=lambda item: item["nome"].lower())
+            realizado_equipe = sum((membro["realizado_total"] for membro in membros), Decimal("0"))
+            equipes_detalhe_modal.append(
+                {
+                    "id": atribuicao.id,
+                    "nome": atribuicao.equipe.nome,
+                    "modo_rateio": atribuicao.get_modo_rateio_display(),
+                    "meta_mensal": atribuicao.valor_mensal,
+                    "realizado_total": realizado_equipe,
+                    "percentual_realizado": _percentual(realizado_equipe, atribuicao.valor_mensal),
+                    "membros": membros,
+                    "total_membros": len(membros),
+                }
+            )
+
     context.update(
         {
+            "competencia_input": competencia.strftime("%Y-%m"),
+            "competencia_label": _formatar_competencia(competencia),
+            "competencia_nome": _formatar_competencia(competencia, incluir_ano=False),
+            "competencia_anterior_input": competencia_anterior.strftime("%Y-%m"),
+            "competencia_proxima_input": competencia_proxima.strftime("%Y-%m"),
             "diagnosticos": diagnosticos,
             "diagnostico_selecionado": diagnostico,
             "indicadores": indicadores,
             "indicador_selecionado": indicador,
+            "indicador_valor_competencia": indicador_snapshot["valor"],
+            "indicador_meta_competencia": indicador_snapshot["meta"],
+            "indicador_percentual_competencia": indicador_snapshot["percentual"],
             "acoes": acoes,
+            "acoes_lista": acoes_lista,
             "acao_alvo_modal": acao_alvo_modal,
-            "atribuicoes_acao": AcaoAtribuicao.objects.filter(acao=acao_alvo_modal) if acao_alvo_modal else AcaoAtribuicao.objects.none(),
+            "atribuicoes_acao": AcaoAtribuicao.objects.filter(acao=acao_alvo_modal).prefetch_related("distribuicoes__funcionario__user") if acao_alvo_modal else AcaoAtribuicao.objects.none(),
+            "equipes_detalhe_modal": equipes_detalhe_modal,
+            "equipes_rateio_data": equipes_rateio_data,
         }
     )
     return render(request, "monitoramento/acoes.html", context)

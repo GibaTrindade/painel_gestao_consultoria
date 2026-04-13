@@ -199,6 +199,20 @@ class Indicador(TimeStampedModel):
         return "Sem produção"
 
 
+class IndicadorMetaVigencia(TimeStampedModel):
+    indicador = models.ForeignKey(Indicador, on_delete=models.CASCADE, related_name="meta_vigencias")
+    inicio_vigencia = models.DateField(help_text="Use o primeiro dia do mes como inicio da vigencia.")
+    fim_vigencia = models.DateField(null=True, blank=True)
+    valor_meta = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ["-inicio_vigencia"]
+        unique_together = ("indicador", "inicio_vigencia")
+
+    def __str__(self):
+        return f"{self.indicador.nome} - {self.inicio_vigencia:%m/%Y} ({self.valor_meta})"
+
+
 class AcaoMelhoria(TimeStampedModel):
     class Status(models.TextChoices):
         ATIVA = "ativa", "Ativa"
@@ -309,6 +323,10 @@ class IndicadorHistoricoMensal(TimeStampedModel):
 
 
 class AcaoAtribuicao(TimeStampedModel):
+    class ModoRateio(models.TextChoices):
+        AUTOMATICO = "automatico", "Automatico"
+        MANUAL = "manual", "Manual"
+
     acao = models.ForeignKey(AcaoMelhoria, on_delete=models.CASCADE, related_name="atribuicoes")
     funcionario = models.ForeignKey(
         Funcionario,
@@ -325,6 +343,7 @@ class AcaoAtribuicao(TimeStampedModel):
         blank=True,
     )
     valor_mensal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    modo_rateio = models.CharField(max_length=20, choices=ModoRateio.choices, default=ModoRateio.AUTOMATICO)
     ativo = models.BooleanField(default=True)
 
     class Meta:
@@ -339,3 +358,16 @@ class AcaoAtribuicao(TimeStampedModel):
 
         if bool(self.funcionario) == bool(self.equipe):
             raise ValidationError("Informe apenas um destino: funcionario ou equipe.")
+
+
+class AcaoAtribuicaoDistribuicao(TimeStampedModel):
+    atribuicao = models.ForeignKey(AcaoAtribuicao, on_delete=models.CASCADE, related_name="distribuicoes")
+    funcionario = models.ForeignKey(Funcionario, on_delete=models.CASCADE, related_name="distribuicoes_acao")
+    valor_mensal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ["funcionario__user__first_name", "funcionario__user__username"]
+        unique_together = ("atribuicao", "funcionario")
+
+    def __str__(self):
+        return f"{self.atribuicao} -> {self.funcionario} ({self.valor_mensal})"

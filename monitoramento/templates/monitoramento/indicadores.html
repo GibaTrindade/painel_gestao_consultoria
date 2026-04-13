@@ -12,7 +12,7 @@
             <input type="hidden" name="cliente" value="{{ cliente_atual.id }}">
         {% endif %}
         <label class="filter-label">
-            <span>Selecione o diagnostico</span>
+            <span><i class="bi bi-clipboard2-pulse"></i> Selecione o diagnostico</span>
             <select name="diagnostico" onchange="this.form.submit()">
                 {% for item in diagnosticos %}
                     <option value="{{ item.id }}" {% if diagnostico_selecionado and item.id == diagnostico_selecionado.id %}selected{% endif %}>{{ item.titulo }}</option>
@@ -27,10 +27,10 @@
         <h3>Indicadores do Diagnostico Selecionado</h3>
         <div class="panel-actions">
             <span>{{ indicadores.count }} registros</span>
-            <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}modal=novo_indicador">Novo Indicador</a>
+            <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}modal=novo_indicador"><i class="bi bi-plus-circle"></i> Novo Indicador</a>
         </div>
     </div>
-    <p class="table-note">O status e o valor atual do indicador sao atualizados automaticamente com base nos lancamentos das tarefas vinculadas as acoes. O codigo do indicador e gerado pelo sistema.</p>
+    <p class="table-note">O status e o valor atual do indicador sao atualizados automaticamente com base nos lancamentos das tarefas vinculadas as acoes. O codigo do indicador e gerado pelo sistema, e o valor atual nao pode ser editado manualmente.</p>
     <table>
         <thead>
             <tr>
@@ -39,7 +39,7 @@
                 <th>Meta</th>
                 <th>Atual</th>
                 <th>Status</th>
-                <th>Acoes vinculadas</th>
+                <th>Atalhos</th>
             </tr>
         </thead>
         <tbody>
@@ -55,7 +55,10 @@
                         </span>
                     </td>
                     <td>
-                        <a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}indicador={{ indicador.id }}&modal=acoes_indicador">Acoes</a>
+                        <div class="inline-action-group">
+                            <a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}indicador={{ indicador.id }}&modal=acoes_indicador"><i class="bi bi-list-check"></i> Acoes</a>
+                            <a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}indicador={{ indicador.id }}&modal=editar_indicador"><i class="bi bi-pencil-square"></i> Editar</a>
+                        </div>
                     </td>
                 </tr>
             {% empty %}
@@ -79,24 +82,61 @@
                 <div class="form-errors">{{ indicador_form.non_field_errors }}</div>
             {% endif %}
             <div class="form-row single">{{ indicador_form.nome.label_tag }} {{ indicador_form.nome }}</div>
-            <div class="form-grid">
-                <div>
-                    {{ indicador_form.valor_atual.label_tag }}
-                    {{ indicador_form.valor_atual }}
-                    {% if indicador_form.valor_atual.help_text %}<small class="field-help">{{ indicador_form.valor_atual.help_text }}</small>{% endif %}
-                    {{ indicador_form.valor_atual.errors }}
-                </div>
-                <div>
-                    {{ indicador_form.meta_valor.label_tag }}
-                    {{ indicador_form.meta_valor }}
-                    {% if indicador_form.meta_valor.help_text %}<small class="field-help">{{ indicador_form.meta_valor.help_text }}</small>{% endif %}
-                    {{ indicador_form.meta_valor.errors }}
-                </div>
+            <div class="form-row single">
+                {{ indicador_form.meta_valor.label_tag }}
+                {{ indicador_form.meta_valor }}
+                {% if indicador_form.meta_valor.help_text %}<small class="field-help">{{ indicador_form.meta_valor.help_text }}</small>{% endif %}
+                {{ indicador_form.meta_valor.errors }}
+            </div>
+            <div class="form-row single">
+                {{ indicador_form.vigencia_inicio.label_tag }}
+                {{ indicador_form.vigencia_inicio }}
+                {% if indicador_form.vigencia_inicio.help_text %}<small class="field-help">{{ indicador_form.vigencia_inicio.help_text }}</small>{% endif %}
+                {{ indicador_form.vigencia_inicio.errors }}
             </div>
             {{ indicador_form.nome.errors }}
+            <div class="table-note">Ao informar uma nova meta, o sistema cria uma vigencia mensal para ela. O valor atual do indicador sera preenchido automaticamente pelos lancamentos feitos nas tarefas das acoes vinculadas.</div>
             <div class="modal-actions">
                 <a class="ghost-btn" href="{% url 'indicadores' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}{% endif %}">Cancelar</a>
                 <button type="submit" class="primary-btn">Confirmar</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endif %}
+
+{% if modal == 'editar_indicador' and indicador_alvo_modal %}
+<section class="modal-backdrop">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3><i class="bi bi-pencil-square"></i> Editar Indicador</h3>
+            <a href="{% url 'indicadores' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}{% endif %}" class="modal-close">&times;</a>
+        </div>
+        <form method="post" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_name" value="editar_indicador">
+            <input type="hidden" name="indicador_id" value="{{ indicador_alvo_modal.id }}">
+            {% if indicador_edicao_form.non_field_errors %}
+                <div class="form-errors">{{ indicador_edicao_form.non_field_errors }}</div>
+            {% endif %}
+            <div class="form-row single">{{ indicador_edicao_form.nome.label_tag }} {{ indicador_edicao_form.nome }}</div>
+            <div class="form-row single">
+                {{ indicador_edicao_form.meta_valor.label_tag }}
+                {{ indicador_edicao_form.meta_valor }}
+                {% if indicador_edicao_form.meta_valor.help_text %}<small class="field-help">{{ indicador_edicao_form.meta_valor.help_text }}</small>{% endif %}
+                {{ indicador_edicao_form.meta_valor.errors }}
+            </div>
+            <div class="form-row single">
+                {{ indicador_edicao_form.vigencia_inicio.label_tag }}
+                {{ indicador_edicao_form.vigencia_inicio }}
+                {% if indicador_edicao_form.vigencia_inicio.help_text %}<small class="field-help">{{ indicador_edicao_form.vigencia_inicio.help_text }}</small>{% endif %}
+                {{ indicador_edicao_form.vigencia_inicio.errors }}
+            </div>
+            {{ indicador_edicao_form.nome.errors }}
+            <div class="table-note">Se a meta mudar, informe o mes inicial da nova vigencia. A vigencia anterior sera encerrada automaticamente no dia anterior.</div>
+            <div class="modal-actions">
+                <a class="ghost-btn" href="{% url 'indicadores' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}{% endif %}">Cancelar</a>
+                <button type="submit" class="primary-btn"><i class="bi bi-check2-circle"></i> Salvar</button>
             </div>
         </form>
     </div>
@@ -107,7 +147,7 @@
 <section class="modal-backdrop">
     <div class="modal-card modal-wide">
         <div class="modal-header">
-            <h3>Acoes Vinculadas ao Indicador</h3>
+            <h3><i class="bi bi-list-check"></i> Acoes Vinculadas ao Indicador</h3>
             <a href="{% url 'indicadores' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}{% endif %}" class="modal-close">&times;</a>
         </div>
         <div class="modal-form">
@@ -149,7 +189,7 @@
             </table>
             <div class="modal-actions">
                 <a class="ghost-btn" href="{% url 'indicadores' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}{% endif %}">Fechar</a>
-                <a class="primary-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}indicador={{ indicador_alvo_modal.id }}">Ir para Acoes</a>
+                <a class="primary-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}indicador={{ indicador_alvo_modal.id }}"><i class="bi bi-arrow-right-circle"></i> Ir para Acoes</a>
             </div>
         </div>
     </div>

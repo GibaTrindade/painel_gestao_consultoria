@@ -122,18 +122,36 @@ class DiagnosticoForm(StyledFormMixin, forms.ModelForm):
 
 
 class IndicadorForm(StyledFormMixin, forms.ModelForm):
+    vigencia_inicio = forms.DateField(
+        label="Vigencia inicial da meta",
+        widget=forms.DateInput(attrs={"type": "month"}, format="%Y-%m"),
+    )
+
     class Meta:
         model = Indicador
-        fields = ["nome", "valor_atual", "meta_valor"]
+        fields = ["nome", "meta_valor"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.apply_styling()
+        self.fields["vigencia_inicio"].input_formats = ["%Y-%m", "%Y-%m-%d"]
         self.fields["nome"].label = "Indicador"
-        self.fields["valor_atual"].label = "Valor atual"
         self.fields["meta_valor"].label = "Meta"
-        self.fields["valor_atual"].help_text = "Informe o valor medido hoje. Se ainda nao houver medicao, use 0."
         self.fields["meta_valor"].help_text = "Meta mensal esperada para esse indicador."
+        self.fields["vigencia_inicio"].help_text = "Informe o mes e o ano a partir dos quais essa meta passa a valer."
+        if self.instance and self.instance.pk:
+            vigencia_atual = self.instance.meta_vigencias.order_by("-inicio_vigencia").first()
+            self.fields["vigencia_inicio"].initial = (
+                vigencia_atual.inicio_vigencia.strftime("%Y-%m")
+                if vigencia_atual
+                else date.today().replace(day=1).strftime("%Y-%m")
+            )
+        else:
+            self.fields["vigencia_inicio"].initial = date.today().replace(day=1).strftime("%Y-%m")
+
+    def clean_vigencia_inicio(self):
+        vigencia = self.cleaned_data["vigencia_inicio"]
+        return date(vigencia.year, vigencia.month, 1)
 
 
 class AtualizarIndicadorForm(StyledFormMixin, forms.ModelForm):
@@ -176,13 +194,19 @@ class AtualizarIndicadorForm(StyledFormMixin, forms.ModelForm):
 class AcaoForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = AcaoMelhoria
-        fields = ["nome", "meta_mensal", "status"]
+        fields = ["nome", "meta_mensal", "status", "responsavel"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, cliente=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.apply_styling()
         self.fields["nome"].label = "Nome da acao"
         self.fields["meta_mensal"].label = "Valor"
+        self.fields["responsavel"].label = "Responsavel da acao"
+        self.fields["responsavel"].required = False
+        self.fields["responsavel"].empty_label = "Selecione quem responde por esta acao"
+        if cliente:
+            usuarios_ids = UsuarioCliente.objects.filter(cliente=cliente, ativo=True).values_list("user_id", flat=True)
+            self.fields["responsavel"].queryset = User.objects.filter(id__in=usuarios_ids).order_by("first_name", "username")
 
 
 class AtribuicaoAcaoForm(StyledFormMixin, forms.Form):

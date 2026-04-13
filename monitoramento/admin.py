@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     AcaoMelhoria,
     AcaoAtribuicao,
+    AcaoAtribuicaoDistribuicao,
     Cliente,
     Diagnostico,
     Equipe,
@@ -95,8 +96,15 @@ class IndicadorHistoricoMensalAdmin(admin.ModelAdmin):
 
 @admin.register(AcaoAtribuicao)
 class AcaoAtribuicaoAdmin(admin.ModelAdmin):
-    list_display = ("acao", "funcionario", "equipe", "valor_mensal", "ativo")
+    list_display = ("acao", "funcionario", "equipe", "modo_rateio", "valor_mensal", "ativo")
     list_filter = ("ativo", "acao__indicador__diagnostico__cliente")
     search_fields = ("acao__nome", "funcionario__user__first_name", "equipe__nome")
+
+
+@admin.register(AcaoAtribuicaoDistribuicao)
+class AcaoAtribuicaoDistribuicaoAdmin(admin.ModelAdmin):
+    list_display = ("atribuicao", "funcionario", "valor_mensal")
+    list_filter = ("atribuicao__acao__indicador__diagnostico__cliente",)
+    search_fields = ("atribuicao__acao__nome", "funcionario__user__first_name", "funcionario__user__last_name")
 
 # Register your models here.
