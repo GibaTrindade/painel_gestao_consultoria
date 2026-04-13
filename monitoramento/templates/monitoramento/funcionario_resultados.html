@@ -2,14 +2,22 @@
 
 {% block title %}App - Resultados{% endblock %}
 {% block worker_title %}Resultados{% endblock %}
-{% block worker_subtitle %}Resumo mensal das suas entregas e metas{% endblock %}
+{% block worker_subtitle %}Resumo mensal das suas entregas, metas e justificativas de fechamento{% endblock %}
 
 {% block worker_content %}
 <section class="worker-card">
     <div class="worker-card-header">
-        <h2>Novembro</h2>
+        <h2>{{ competencia_label }}</h2>
         <span>Mensal</span>
     </div>
+    <form method="get" class="dashboard-filter-form">
+        <input type="hidden" name="competencia" value="{{ competencia_input }}" data-dashboard-month-input>
+        <div class="month-switcher" data-month-switcher>
+            <button type="button" class="month-arrow" data-month-target="{{ competencia_anterior_input }}" aria-label="Mes anterior">&larr;</button>
+            <span class="month-switcher-label">{{ competencia_label }}</span>
+            <button type="button" class="month-arrow" data-month-target="{{ competencia_proxima_input }}" aria-label="Proximo mes">&rarr;</button>
+        </div>
+    </form>
     <div class="worker-result-box">
         <small>Geral</small>
         <strong>{{ resultado_percentual }}%</strong>
@@ -24,21 +32,110 @@
     </div>
 </section>
 
+{% if pendencias_justificativa %}
+<section class="worker-card">
+    <div class="worker-card-header">
+        <h2>Justificativas Pendentes</h2>
+        <span>{{ pendencias_justificativa|length }} pendencia{{ pendencias_justificativa|length|pluralize }}</span>
+    </div>
+    <p class="table-note">Essas tarefas ficaram abaixo da meta em {{ competencia_label }}. Registre a justificativa mensal para fechar a competencia.</p>
+    <div class="worker-task-list">
+        {% for item in pendencias_justificativa %}
+            <article class="worker-task-item">
+                <strong>{{ item.titulo }}</strong>
+                <span>{{ item.acao_nome }}</span>
+                <small>Meta {{ item.meta_quantidade }} | Realizado {{ item.realizado_total }}</small>
+                <form method="post" class="worker-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="tarefa_id" value="{{ item.obj.id }}">
+                    <div>
+                        <label for="categoria_{{ item.obj.id }}">Categoria do gargalo</label>
+                        <select id="categoria_{{ item.obj.id }}" name="categoria" class="form-control" data-categoria-gargalo>
+                            <option value="">Selecione</option>
+                            {% for valor, label in categorias_gargalo %}
+                                <option value="{{ valor }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="justificativa_{{ item.obj.id }}">Justificativa do nao atingimento</label>
+                        <textarea id="justificativa_{{ item.obj.id }}" name="justificativa" rows="3" class="form-control"></textarea>
+                    </div>
+                    <div data-outro-wrapper hidden>
+                        <label for="detalhe_outro_{{ item.obj.id }}">Descreva o outro motivo</label>
+                        <textarea id="detalhe_outro_{{ item.obj.id }}" name="detalhe_outro" rows="3" class="form-control"></textarea>
+                    </div>
+                    <div class="worker-actions">
+                        <button type="submit" class="primary-btn">Salvar justificativa</button>
+                    </div>
+                </form>
+            </article>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
 <section class="worker-card">
     <div class="worker-card-header">
         <h2>Por Meta</h2>
-        <span>{{ tarefas_funcionario.count }} itens</span>
+        <span>{{ tarefas_funcionario|length }} itens</span>
     </div>
     <div class="worker-task-list">
         {% for tarefa in tarefas_funcionario %}
             <article class="worker-task-item">
                 <strong>{{ tarefa.titulo }}</strong>
-                <span>{{ tarefa.acao.nome }}</span>
+                <span>{{ tarefa.acao_nome }}</span>
                 <small>Meta {{ tarefa.meta_quantidade }} | Realizado {{ tarefa.realizado_total }}</small>
+                {% if tarefa.abaixo_da_meta %}
+                    {% if tarefa.justificativa_mensal %}
+                        <small>Causa: {{ tarefa.justificativa_mensal.get_categoria_display }}</small>
+                        {% if tarefa.justificativa_mensal.justificativa %}
+                            <small>OBS mensal: {{ tarefa.justificativa_mensal.justificativa }}</small>
+                        {% endif %}
+                        {% if tarefa.justificativa_mensal.detalhe_outro %}
+                            <small>Detalhe do outro motivo: {{ tarefa.justificativa_mensal.detalhe_outro }}</small>
+                        {% endif %}
+                    {% elif competencia_fechada %}
+                        <small class="text-warning">Aguardando justificativa de fechamento.</small>
+                    {% else %}
+                        <small class="text-muted">A competencia ainda esta em aberto.</small>
+                    {% endif %}
+                {% else %}
+                    <small class="text-success">Meta atingida na competencia.</small>
+                {% endif %}
             </article>
         {% empty %}
             <p class="table-note">Nenhum resultado disponivel.</p>
         {% endfor %}
     </div>
 </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    (() => {
+        const form = document.querySelector(".dashboard-filter-form");
+        const monthInput = document.querySelector("[data-dashboard-month-input]");
+        if (!form || !monthInput) return;
+
+        document.querySelectorAll("[data-month-target]").forEach((button) => {
+            button.addEventListener("click", () => {
+                monthInput.value = button.dataset.monthTarget;
+                form.submit();
+            });
+        });
+
+        document.querySelectorAll("[data-categoria-gargalo]").forEach((select) => {
+            const wrapper = select.closest("form")?.querySelector("[data-outro-wrapper]");
+            if (!wrapper) return;
+
+            const toggleOutro = () => {
+                wrapper.hidden = select.value !== "outro";
+            };
+
+            select.addEventListener("change", toggleOutro);
+            toggleOutro();
+        });
+    })();
+</script>
 {% endblock %}

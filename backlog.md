@@ -154,7 +154,7 @@ Fases decididas:
 - Fase 2: permitir distribuicao manual por membro
 - Fase 3: permitir que a meta fique na equipe, mas mantendo visibilidade interna do desempenho de cada membro
 
-Status: concluido tecnicamente
+Status: homologado
 Prioridade: alta
 
 Detalhamento das fases:
@@ -236,7 +236,7 @@ Entregas:
 - deixar feedback claro na area do funcionario
 - cobrir com teste
 
-Status: pendente
+Status: homologado
 Prioridade: alta
 
 #### Item 5. Estruturar categorias de gargalo/causa
@@ -260,7 +260,7 @@ Entregas:
 - manter texto livre complementar
 - permitir relatorios por causa
 
-Status: pendente
+Status: homologado
 Prioridade: alta
 
 #### Item 6. Criar analise de gargalos por unidade, equipe e funcionario

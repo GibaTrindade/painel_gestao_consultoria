@@ -295,7 +295,7 @@ class RegistroDiario(TimeStampedModel):
     tarefa = models.ForeignKey(Tarefa, on_delete=models.CASCADE, related_name="registros")
     funcionario = models.ForeignKey(Funcionario, on_delete=models.CASCADE, related_name="registros")
     data = models.DateField(default=timezone.localdate)
-    descricao_atividade = models.TextField()
+    descricao_atividade = models.TextField(blank=True)
     quantidade_prevista = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     quantidade_realizada = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     situacao = models.CharField(max_length=20, choices=Tarefa.Situacao.choices, default=Tarefa.Situacao.PENDENTE)
@@ -306,6 +306,31 @@ class RegistroDiario(TimeStampedModel):
 
     def __str__(self):
         return f"{self.funcionario} - {self.data}"
+
+
+class JustificativaNaoAtingimentoMensal(TimeStampedModel):
+    class CategoriaGargalo(models.TextChoices):
+        FALTA_INSUMO = "falta_insumo", "Falta de insumo"
+        FALTA_PESSOAL = "falta_pessoal", "Falta de pessoal"
+        PROBLEMA_LOGISTICO = "problema_logistico", "Problema logistico"
+        PROBLEMA_SISTEMA = "problema_sistema", "Problema no sistema"
+        DEMANDA_ABAIXO = "demanda_abaixo", "Demanda abaixo do previsto"
+        AUSENCIA_PROFISSIONAL = "ausencia_profissional", "Ausencia do profissional"
+        OUTRO = "outro", "Outro"
+
+    tarefa = models.ForeignKey(Tarefa, on_delete=models.CASCADE, related_name="justificativas_mensais")
+    funcionario = models.ForeignKey(Funcionario, on_delete=models.CASCADE, related_name="justificativas_mensais")
+    competencia = models.DateField(help_text="Use o primeiro dia do mes como referencia.")
+    categoria = models.CharField(max_length=40, choices=CategoriaGargalo.choices)
+    justificativa = models.TextField(blank=True)
+    detalhe_outro = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-competencia", "-updated_at"]
+        unique_together = ("tarefa", "competencia")
+
+    def __str__(self):
+        return f"{self.tarefa} - {self.competencia:%m/%Y}"
 
 
 class IndicadorHistoricoMensal(TimeStampedModel):

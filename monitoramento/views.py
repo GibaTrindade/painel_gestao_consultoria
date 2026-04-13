@@ -35,6 +35,7 @@ from .models import (
     Indicador,
     IndicadorHistoricoMensal,
     IndicadorMetaVigencia,
+    JustificativaNaoAtingimentoMensal,
     PerfilUsuario,
     RegistroDiario,
     Tarefa,
@@ -190,6 +191,25 @@ def _snapshot_indicador_por_registros(indicador, competencia):
         "valor": valor,
         "meta": meta,
         "percentual": _percentual(valor, meta),
+    }
+
+
+def _resumo_tarefa_competencia(tarefa, competencia, registros_map=None):
+    competencia_final = _proxima_competencia(competencia)
+    registros_map = registros_map or {}
+    registros = registros_map.get(tarefa.id)
+    if registros is None:
+        registros = list(
+            tarefa.registros.filter(data__gte=competencia, data__lt=competencia_final).order_by("-data", "-created_at")
+        )
+    realizado_total = sum((registro.quantidade_realizada for registro in registros), Decimal("0"))
+    meta = tarefa.meta_quantidade or Decimal("0")
+    return {
+        "registros": registros,
+        "realizado_total": realizado_total,
+        "meta": meta,
+        "percentual": _percentual(realizado_total, meta),
+        "abaixo_da_meta": meta > 0 and realizado_total < meta,
     }
 
 
@@ -917,6 +937,260 @@ def dashboard_view(request):
 
 
 @login_required
+def analise_problemas_view(request):
+    context = _base_context(request, "analise-problemas")
+    if context["perfil_tipo"] == "funcionario":
+        return redirect("funcionario-metas")
+
+    cliente = context["cliente_atual"]
+    competencia = _parse_competencia(request.GET.get("competencia"))
+    competencia_final = _proxima_competencia(competencia)
+    competencia_anterior = _competencia_anterior(competencia)
+    competencia_proxima = _proxima_competencia(competencia)
+
+    tarefas = (
+        Tarefa.objects.filter(funcionario__cliente=cliente)
+        .select_related(
+            "funcionario__user",
+            "funcionario__equipe",
+            "acao",
+            "acao__indicador",
+            "acao__indicador__diagnostico",
+        )
+        .prefetch_related("registros", "justificativas_mensais")
+        if cliente
+        else Tarefa.objects.none()
+    )
+    justificativas = (
+        JustificativaNaoAtingimentoMensal.objects.filter(
+            tarefa__funcionario__cliente=cliente,
+            competencia=competencia,
+        )
+        .select_related(
+            "funcionario__user",
+            "funcionario__equipe",
+            "tarefa",
+            "tarefa__acao",
+            "tarefa__acao__indicador",
+            "tarefa__acao__indicador__diagnostico",
+        )
+        if cliente
+        else JustificativaNaoAtingimentoMensal.objects.none()
+    )
+
+    registros_competencia = list(
+        RegistroDiario.objects.filter(
+            funcionario__cliente=cliente,
+            data__gte=competencia,
+            data__lt=competencia_final,
+        ).select_related("tarefa")
+        if cliente
+        else RegistroDiario.objects.none()
+    )
+    registros_map = {}
+    for registro in registros_competencia:
+        registros_map.setdefault(registro.tarefa_id, []).append(registro)
+
+    justificativas_map = {item.tarefa_id: item for item in justificativas}
+    ocorrencias = []
+    funcionario_metricas = {}
+    equipe_metricas = {}
+    acao_metricas = {}
+
+    for tarefa in tarefas:
+        resumo = _resumo_tarefa_competencia(tarefa, competencia, registros_map=registros_map)
+        if resumo["meta"] <= 0:
+            continue
+
+        equipe_nome = tarefa.funcionario.equipe.nome if tarefa.funcionario.equipe else "Sem equipe"
+        funcionario_nome = tarefa.funcionario.user.get_full_name() or tarefa.funcionario.user.username
+        percentual = float(resumo["percentual"])
+        abaixo_da_meta = resumo["abaixo_da_meta"]
+        justificativa = justificativas_map.get(tarefa.id)
+
+        funcionario_item = funcionario_metricas.setdefault(
+            tarefa.funcionario_id,
+            {
+                "nome": funcionario_nome,
+                "equipe": equipe_nome,
+                "abaixo_meta": 0,
+                "pendencias": 0,
+                "percentuais": [],
+            },
+        )
+        funcionario_item["percentuais"].append(percentual)
+        if abaixo_da_meta:
+            funcionario_item["abaixo_meta"] += 1
+            if not justificativa:
+                funcionario_item["pendencias"] += 1
+
+        equipe_item = equipe_metricas.setdefault(
+            equipe_nome,
+            {
+                "nome": equipe_nome,
+                "abaixo_meta": 0,
+                "pendencias": 0,
+                "justificadas": 0,
+                "percentuais": [],
+            },
+        )
+        equipe_item["percentuais"].append(percentual)
+        if abaixo_da_meta:
+            equipe_item["abaixo_meta"] += 1
+            if justificativa:
+                equipe_item["justificadas"] += 1
+            else:
+                equipe_item["pendencias"] += 1
+
+        acao_key = tarefa.acao_id
+        acao_item = acao_metricas.setdefault(
+            acao_key,
+            {
+                "acao": tarefa.acao.nome,
+                "indicador": tarefa.acao.indicador.nome,
+                "diagnostico": tarefa.acao.indicador.diagnostico.titulo,
+                "abaixo_meta": 0,
+                "pendencias": 0,
+                "categorias": {},
+            },
+        )
+        if abaixo_da_meta:
+            acao_item["abaixo_meta"] += 1
+            if justificativa:
+                categoria_label = justificativa.get_categoria_display()
+                acao_item["categorias"][categoria_label] = acao_item["categorias"].get(categoria_label, 0) + 1
+            else:
+                acao_item["pendencias"] += 1
+
+            ocorrencias.append(
+                {
+                    "tarefa": tarefa.titulo,
+                    "acao": tarefa.acao.nome,
+                    "indicador": tarefa.acao.indicador.nome,
+                    "diagnostico": tarefa.acao.indicador.diagnostico.titulo,
+                    "funcionario": funcionario_nome,
+                    "equipe": equipe_nome,
+                    "meta": resumo["meta"],
+                    "realizado": resumo["realizado_total"],
+                    "categoria": justificativa.get_categoria_display() if justificativa else "Pendente",
+                    "status": "Justificado" if justificativa else "Pendente",
+                }
+            )
+
+    total_abaixo_meta = sum(item["abaixo_meta"] for item in funcionario_metricas.values())
+    total_pendencias = sum(item["pendencias"] for item in funcionario_metricas.values())
+    total_justificadas = justificativas.count() if cliente else 0
+    total_equipes_afetadas = sum(1 for item in equipe_metricas.values() if item["abaixo_meta"] > 0)
+    total_funcionarios_afetados = sum(1 for item in funcionario_metricas.values() if item["abaixo_meta"] > 0)
+
+    categorias_contagem = {label: 0 for _, label in JustificativaNaoAtingimentoMensal.CategoriaGargalo.choices}
+    for justificativa in justificativas:
+        categorias_contagem[justificativa.get_categoria_display()] = categorias_contagem.get(
+            justificativa.get_categoria_display(),
+            0,
+        ) + 1
+
+    if total_pendencias:
+        categorias_contagem["Pendentes sem causa"] = total_pendencias
+
+    categorias_series = [
+        {"label": label, "valor": total}
+        for label, total in categorias_contagem.items()
+        if total > 0
+    ] or [{"label": "Sem categorias no periodo", "valor": 0}]
+
+    ranking_funcionarios = []
+    for item in funcionario_metricas.values():
+        media_percentual = round(sum(item["percentuais"]) / len(item["percentuais"]), 1) if item["percentuais"] else 0
+        ranking_funcionarios.append(
+            {
+                "nome": item["nome"],
+                "equipe": item["equipe"],
+                "abaixo_meta": item["abaixo_meta"],
+                "pendencias": item["pendencias"],
+                "media_percentual": media_percentual,
+            }
+        )
+    ranking_funcionarios.sort(key=lambda item: (-item["abaixo_meta"], item["media_percentual"], item["nome"]))
+
+    ranking_funcionarios_series = [
+        {"label": item["nome"], "valor": item["abaixo_meta"]}
+        for item in ranking_funcionarios[:6]
+    ] or [{"label": "Sem ocorrencias", "valor": 0}]
+
+    comparativo_equipes = []
+    radar_colors = ["#39D5FF", "#FF4FD8", "#7CFFB2", "#B6FF3B"]
+    for index, item in enumerate(sorted(equipe_metricas.values(), key=lambda equipe: equipe["nome"])):
+        media_percentual = round(sum(item["percentuais"]) / len(item["percentuais"]), 1) if item["percentuais"] else 0
+        total_ocorrencias_equipe = item["abaixo_meta"] + item["justificadas"]
+        pendencias_percentual = round((item["pendencias"] / item["abaixo_meta"] * 100), 1) if item["abaixo_meta"] else 0
+        justificadas_percentual = round((item["justificadas"] / item["abaixo_meta"] * 100), 1) if item["abaixo_meta"] else 0
+        criticidade_percentual = round((item["abaixo_meta"] / total_ocorrencias_equipe * 100), 1) if total_ocorrencias_equipe else 0
+        comparativo_equipes.append(
+            {
+                "label": item["nome"],
+                "color": radar_colors[index % len(radar_colors)],
+                "abaixo_meta": item["abaixo_meta"],
+                "pendencias": item["pendencias"],
+                "justificadas": item["justificadas"],
+                "atingimento_medio": media_percentual,
+                "criticidade_percentual": criticidade_percentual,
+                "pendencias_percentual": pendencias_percentual,
+                "justificadas_percentual": justificadas_percentual,
+            }
+        )
+
+    radar_series = [
+        {
+            "label": item["label"],
+            "abaixo_meta": item["criticidade_percentual"],
+            "pendencias": item["pendencias_percentual"],
+            "justificadas": item["justificadas_percentual"],
+            "atingimento_medio": item["atingimento_medio"],
+            "color": item["color"],
+        }
+        for item in comparativo_equipes[:4]
+    ]
+
+    acoes_criticas = []
+    for item in acao_metricas.values():
+        categorias_resumo = ", ".join(
+            f"{categoria}: {quantidade}" for categoria, quantidade in sorted(item["categorias"].items())
+        ) or "Sem justificativas registradas"
+        acoes_criticas.append(
+            {
+                **item,
+                "categorias_resumo": categorias_resumo,
+            }
+        )
+    acoes_criticas.sort(key=lambda item: (-item["abaixo_meta"], -item["pendencias"], item["acao"]))
+
+    ocorrencias.sort(key=lambda item: (item["status"] != "Pendente", item["equipe"], item["funcionario"], item["tarefa"]))
+
+    context.update(
+        {
+            "competencia_input": competencia.strftime("%Y-%m"),
+            "competencia_label": _formatar_competencia(competencia),
+            "competencia_nome": _formatar_competencia(competencia, incluir_ano=False),
+            "competencia_anterior_input": competencia_anterior.strftime("%Y-%m"),
+            "competencia_proxima_input": competencia_proxima.strftime("%Y-%m"),
+            "total_abaixo_meta": total_abaixo_meta,
+            "total_pendencias": total_pendencias,
+            "total_justificadas": total_justificadas,
+            "total_equipes_afetadas": total_equipes_afetadas,
+            "total_funcionarios_afetados": total_funcionarios_afetados,
+            "categorias_series": categorias_series,
+            "ranking_funcionarios_series": ranking_funcionarios_series,
+            "radar_series": radar_series,
+            "ranking_funcionarios": ranking_funcionarios[:8],
+            "acoes_criticas": acoes_criticas[:8],
+            "ocorrencias": ocorrencias[:12],
+        }
+    )
+    return render(request, "monitoramento/analise_problemas.html", context)
+
+
+@login_required
 def funcionario_metas_view(request):
     context = _worker_context(request, "funcionario-metas")
     funcionario = context["funcionario_atual"]
@@ -924,13 +1198,32 @@ def funcionario_metas_view(request):
         messages.error(request, "Nenhum vinculo de funcionario encontrado para essa organizacao.")
         return redirect("dashboard")
 
+    competencia = timezone.localdate().replace(day=1)
     tarefas = (
         Tarefa.objects.filter(funcionario=funcionario)
         .select_related("acao__indicador")
         .prefetch_related("registros")
         .order_by("prazo", "titulo")
     )
-    tarefa_alvo = tarefas.filter(pk=request.GET.get("tarefa")).first() or tarefas.first()
+    tarefas_competencia = []
+    for tarefa in tarefas:
+        resumo = _resumo_tarefa_competencia(tarefa, competencia)
+        tarefas_competencia.append(
+            {
+                "obj": tarefa,
+                "id": tarefa.id,
+                "titulo": tarefa.titulo,
+                "acao_nome": tarefa.acao.nome,
+                "meta_quantidade": resumo["meta"],
+                "realizado_total": resumo["realizado_total"],
+                "percentual_realizado": resumo["percentual"],
+            }
+        )
+
+    tarefa_alvo = next((item for item in tarefas_competencia if str(item["id"]) == str(request.GET.get("tarefa"))), None) or (
+        tarefas_competencia[0] if tarefas_competencia else None
+    )
+    tarefa_alvo_obj = tarefa_alvo["obj"] if tarefa_alvo else None
 
     if request.method == "POST":
         tarefa_id = request.POST.get("tarefa_id")
@@ -942,11 +1235,12 @@ def funcionario_metas_view(request):
             messages.success(request, "Producao informada com sucesso.")
             return _redirect_with_query("funcionario-metas", {"tarefa": tarefa_post.id})
     else:
-        registro_form = RegistroDiarioForm(tarefa=tarefa_alvo)
+        registro_form = RegistroDiarioForm(tarefa=tarefa_alvo_obj)
 
     context.update(
         {
-            "tarefas_funcionario": tarefas,
+            "competencia_label": _formatar_competencia(competencia),
+            "tarefas_funcionario": tarefas_competencia,
             "tarefa_alvo": tarefa_alvo,
             "registro_form": registro_form,
             "registros_recentes": RegistroDiario.objects.filter(funcionario=funcionario).select_related("tarefa")[:8],
@@ -964,17 +1258,116 @@ def funcionario_resultados_view(request):
         messages.error(request, "Nenhum vinculo de funcionario encontrado para essa organizacao.")
         return redirect("dashboard")
 
-    tarefas = Tarefa.objects.filter(funcionario=funcionario).select_related("acao__indicador")
-    total_meta = sum(float(t.meta_quantidade or 0) for t in tarefas)
-    total_realizado = sum(float(t.realizado_total or 0) for t in tarefas)
-    percentual = round((total_realizado / total_meta * 100), 1) if total_meta else 0
+    competencia_param = request.GET.get("competencia")
+    competencia_atual = timezone.localdate().replace(day=1)
+    competencia = (
+        _parse_competencia(competencia_param)
+        if competencia_param
+        else _competencia_anterior(competencia_atual)
+    )
+    competencia_final = _proxima_competencia(competencia)
+    competencia_anterior = _competencia_anterior(competencia)
+    competencia_proxima = _proxima_competencia(competencia)
+    competencia_fechada = competencia < competencia_atual
+
+    tarefas = (
+        Tarefa.objects.filter(funcionario=funcionario)
+        .select_related("acao__indicador")
+        .prefetch_related("registros")
+        .order_by("titulo")
+    )
+
+    if request.method == "POST":
+        tarefa_id = request.POST.get("tarefa_id")
+        categoria = (request.POST.get("categoria") or "").strip()
+        justificativa = (request.POST.get("justificativa") or "").strip()
+        detalhe_outro = (request.POST.get("detalhe_outro") or "").strip()
+        tarefa = get_object_or_404(tarefas, pk=tarefa_id)
+        resumo_tarefa = _resumo_tarefa_competencia(tarefa, competencia)
+        if not competencia_fechada:
+            messages.error(request, "A justificativa mensal so pode ser registrada para competencias ja fechadas.")
+        elif not resumo_tarefa["abaixo_da_meta"]:
+            messages.error(request, "Essa tarefa nao ficou abaixo da meta na competencia informada.")
+        elif not categoria:
+            messages.error(request, "Selecione a categoria do gargalo para continuar.")
+        elif categoria == JustificativaNaoAtingimentoMensal.CategoriaGargalo.OUTRO and not detalhe_outro:
+            messages.error(request, "Ao selecionar 'Outro', descreva o motivo no campo complementar.")
+        else:
+            JustificativaNaoAtingimentoMensal.objects.update_or_create(
+                tarefa=tarefa,
+                competencia=competencia,
+                defaults={
+                    "funcionario": funcionario,
+                    "categoria": categoria,
+                    "justificativa": justificativa,
+                    "detalhe_outro": detalhe_outro,
+                },
+            )
+            messages.success(request, "Justificativa mensal registrada com sucesso.")
+        return _redirect_with_query("funcionario-resultados", {"competencia": competencia.strftime("%Y-%m")})
+
+    registros_competencia = list(
+        RegistroDiario.objects.filter(
+            funcionario=funcionario,
+            data__gte=competencia,
+            data__lt=competencia_final,
+        )
+        .select_related("tarefa", "tarefa__acao", "tarefa__acao__indicador")
+        .order_by("-data", "-created_at")
+    )
+    registros_map = {}
+    for registro in registros_competencia:
+        registros_map.setdefault(registro.tarefa_id, []).append(registro)
+
+    justificativas_map = {
+        item.tarefa_id: item
+        for item in JustificativaNaoAtingimentoMensal.objects.filter(
+            funcionario=funcionario,
+            tarefa__in=tarefas,
+            competencia=competencia,
+        ).select_related("tarefa")
+    }
+
+    tarefas_competencia = []
+    pendencias_justificativa = []
+    total_meta = Decimal("0")
+    total_realizado = Decimal("0")
+
+    for tarefa in tarefas:
+        resumo = _resumo_tarefa_competencia(tarefa, competencia, registros_map=registros_map)
+        justificativa_mensal = justificativas_map.get(tarefa.id)
+        item = {
+            "obj": tarefa,
+            "titulo": tarefa.titulo,
+            "acao_nome": tarefa.acao.nome,
+            "meta_quantidade": resumo["meta"],
+            "realizado_total": resumo["realizado_total"],
+            "percentual_realizado": resumo["percentual"],
+            "abaixo_da_meta": resumo["abaixo_da_meta"],
+            "justificativa_mensal": justificativa_mensal,
+            "precisa_justificativa": competencia_fechada and resumo["abaixo_da_meta"] and not justificativa_mensal,
+        }
+        tarefas_competencia.append(item)
+        total_meta += resumo["meta"]
+        total_realizado += resumo["realizado_total"]
+        if item["precisa_justificativa"]:
+            pendencias_justificativa.append(item)
+
+    percentual = round(float(_percentual(total_realizado, total_meta)), 1) if total_meta else 0
 
     context.update(
         {
-            "tarefas_funcionario": tarefas,
+            "competencia_input": competencia.strftime("%Y-%m"),
+            "competencia_label": _formatar_competencia(competencia),
+            "competencia_anterior_input": competencia_anterior.strftime("%Y-%m"),
+            "competencia_proxima_input": competencia_proxima.strftime("%Y-%m"),
+            "competencia_fechada": competencia_fechada,
+            "tarefas_funcionario": tarefas_competencia,
+            "pendencias_justificativa": pendencias_justificativa,
             "resultado_percentual": percentual,
             "resultado_meta_total": total_meta,
             "resultado_realizado_total": total_realizado,
+            "categorias_gargalo": JustificativaNaoAtingimentoMensal.CategoriaGargalo.choices,
         }
     )
     return render(request, "monitoramento/funcionario_resultados.html", context)

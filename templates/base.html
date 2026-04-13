@@ -30,6 +30,7 @@
 
                 <nav class="nav-links">
                     <a href="{% url 'dashboard' %}" class="{% if pagina == 'dashboard' %}active{% endif %}"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
+                    <a href="{% url 'analise-problemas' %}" class="{% if pagina == 'analise-problemas' %}active{% endif %}"><i class="bi bi-graph-up-arrow"></i><span>Analise de Problemas</span></a>
                     <a href="{% url 'diagnosticos' %}" class="{% if pagina == 'diagnosticos' %}active{% endif %}"><i class="bi bi-clipboard2-pulse"></i><span>Diagnosticos</span></a>
                     <a href="{% url 'indicadores' %}" class="{% if pagina == 'indicadores' %}active{% endif %}"><i class="bi bi-speedometer2"></i><span>Indicadores</span></a>
                     <a href="{% url 'acoes' %}" class="{% if pagina == 'acoes' %}active{% endif %}"><i class="bi bi-list-check"></i><span>Acoes</span></a>

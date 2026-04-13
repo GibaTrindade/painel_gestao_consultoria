@@ -2,20 +2,20 @@
 
 {% block title %}App - Metas{% endblock %}
 {% block worker_title %}Hoje{% endblock %}
-{% block worker_subtitle %}Segunda-feira, {{ hoje|date:"d \\d\\e F \\d\\e Y" }}{% endblock %}
+{% block worker_subtitle %}Segunda-feira, {{ hoje|date:"d \\d\\e F \\d\\e Y" }} | Competencia: {{ competencia_label }}{% endblock %}
 
 {% block worker_content %}
 <section class="worker-card">
     <div class="worker-card-header">
         <h2>Tarefas a fazer</h2>
-        <span>{{ tarefas_funcionario.count }} tarefas</span>
+        <span>{{ tarefas_funcionario|length }} tarefas</span>
     </div>
     <div class="worker-task-list">
         {% for tarefa in tarefas_funcionario %}
             <article class="worker-task-item {% if tarefa_alvo and tarefa.id == tarefa_alvo.id %}active{% endif %}">
                 <a href="?tarefa={{ tarefa.id }}" class="worker-task-link">
                     <strong>{{ tarefa.titulo }}</strong>
-                    <span>{{ tarefa.acao.nome }}</span>
+                    <span>{{ tarefa.acao_nome }}</span>
                     <small>Meta {{ tarefa.meta_quantidade }} | Realizado {{ tarefa.realizado_total }}</small>
                 </a>
             </article>
@@ -29,19 +29,20 @@
 <section class="worker-card">
     <div class="worker-card-header">
         <h2>{{ tarefa_alvo.titulo }}</h2>
-        <span>{{ tarefa_alvo.get_situacao_display }}</span>
+        <span>{{ competencia_label }}</span>
     </div>
-    <p class="table-note">{{ tarefa_alvo.descricao|default:tarefa_alvo.acao.nome }}</p>
+    <p class="table-note">{{ tarefa_alvo.obj.descricao|default:tarefa_alvo.acao_nome }}</p>
     <div class="worker-kpi-row">
         <div><small>Meta</small><strong>{{ tarefa_alvo.meta_quantidade }}</strong></div>
         <div><small>Realizado</small><strong>{{ tarefa_alvo.realizado_total }}</strong></div>
     </div>
+    <p class="table-note">A justificativa no lancamento diario e opcional. Quando uma competencia fechar abaixo da meta, o sistema vai pedir a justificativa mensal na tela de resultados.</p>
     <form method="post" class="worker-form">
         {% csrf_token %}
         <input type="hidden" name="tarefa_id" value="{{ tarefa_alvo.id }}">
         <div>{{ registro_form.descricao_atividade.label_tag }} {{ registro_form.descricao_atividade }}</div>
+        {% if registro_form.descricao_atividade.help_text %}<small class="field-help">{{ registro_form.descricao_atividade.help_text }}</small>{% endif %}
         <div>{{ registro_form.quantidade_realizada.label_tag }} {{ registro_form.quantidade_realizada }}</div>
-        <div>{{ registro_form.justificativa.label_tag }} {{ registro_form.justificativa }}</div>
         <div class="worker-actions">
             <button type="submit" class="primary-btn">Confirmar</button>
         </div>

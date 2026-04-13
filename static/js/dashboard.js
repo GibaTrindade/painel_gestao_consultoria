@@ -201,6 +201,207 @@
 
     document.querySelectorAll("[data-line-chart]").forEach(createChart);
 
+    function createBarChart(canvas) {
+        if (typeof window.Chart === "undefined") {
+            return;
+        }
+        const series = getSeries(canvas);
+        if (!series.length) {
+            return;
+        }
+
+        new Chart(canvas, {
+            type: "bar",
+            data: {
+                labels: series.map((item) => item.label),
+                datasets: [
+                    {
+                        label: canvas.dataset.chartTitle || "Valores",
+                        data: series.map((item) => Number(item.valor || 0)),
+                        borderRadius: 12,
+                        borderSkipped: false,
+                        backgroundColor: canvas.dataset.barColor || "#39D5FF",
+                        maxBarThickness: 42,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 900,
+                    easing: "easeOutQuart",
+                },
+                plugins: {
+                    legend: {
+                        display: false,
+                    },
+                    tooltip: {
+                        backgroundColor: "rgba(7, 11, 24, 0.96)",
+                        borderColor: "rgba(105, 177, 255, 0.34)",
+                        borderWidth: 1,
+                        padding: 12,
+                        titleColor: "#d9ecff",
+                        bodyColor: "#f7fbff",
+                        cornerRadius: 14,
+                        titleFont: {
+                            family: "IBM Plex Mono",
+                            size: 12,
+                            weight: "600",
+                        },
+                        bodyFont: {
+                            family: "IBM Plex Mono",
+                            size: 11,
+                        },
+                    },
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: "rgba(219, 232, 255, 0.74)",
+                            font: {
+                                family: "IBM Plex Mono",
+                                size: 11,
+                            },
+                        },
+                        grid: {
+                            display: false,
+                        },
+                        border: {
+                            display: false,
+                        },
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0,
+                            color: "rgba(184, 213, 255, 0.68)",
+                            font: {
+                                family: "IBM Plex Mono",
+                                size: 11,
+                            },
+                        },
+                        grid: {
+                            color: "rgba(116, 168, 255, 0.12)",
+                            drawBorder: false,
+                        },
+                        border: {
+                            display: false,
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    document.querySelectorAll("[data-bar-chart]").forEach(createBarChart);
+
+    function createRadarChart(canvas) {
+        if (typeof window.Chart === "undefined") {
+            return;
+        }
+        const series = getSeries(canvas);
+        if (!series.length) {
+            return;
+        }
+
+        const maxRadarValue = Math.max(
+            10,
+            ...series.flatMap((item) => [
+                Number(item.abaixo_meta || 0),
+                Number(item.pendencias || 0),
+                Number(item.justificadas || 0),
+                Number(item.atingimento_medio || 0),
+            ]),
+        );
+        const radarStep = maxRadarValue <= 25 ? 5 : maxRadarValue <= 50 ? 10 : 20;
+        const radarMax = Math.ceil(maxRadarValue / radarStep) * radarStep;
+
+        new Chart(canvas, {
+            type: "radar",
+            data: {
+                labels: ["Nao atingimentos", "Pendencias", "Justificadas", "Atingimento medio"],
+                datasets: series.map((item) => ({
+                    label: item.label,
+                    data: [
+                        Number(item.abaixo_meta || 0),
+                        Number(item.pendencias || 0),
+                        Number(item.justificadas || 0),
+                        Number(item.atingimento_medio || 0),
+                    ],
+                    borderColor: item.color || "#39D5FF",
+                    backgroundColor: `${item.color || "#39D5FF"}22`,
+                    pointBackgroundColor: item.color || "#39D5FF",
+                    pointBorderColor: "#ffffff",
+                    pointHoverBackgroundColor: "#ffffff",
+                    pointHoverBorderColor: item.color || "#39D5FF",
+                    borderWidth: 2,
+                })),
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 900,
+                    easing: "easeOutQuart",
+                },
+                plugins: {
+                    legend: {
+                        display: false,
+                    },
+                    tooltip: {
+                        backgroundColor: "rgba(7, 11, 24, 0.96)",
+                        borderColor: "rgba(105, 177, 255, 0.34)",
+                        borderWidth: 1,
+                        padding: 12,
+                        titleColor: "#d9ecff",
+                        bodyColor: "#f7fbff",
+                        cornerRadius: 14,
+                        titleFont: {
+                            family: "IBM Plex Mono",
+                            size: 12,
+                            weight: "600",
+                        },
+                        bodyFont: {
+                            family: "IBM Plex Mono",
+                            size: 11,
+                        },
+                    },
+                },
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        suggestedMax: radarMax,
+                        angleLines: {
+                            color: "rgba(116, 168, 255, 0.16)",
+                        },
+                        grid: {
+                            color: "rgba(116, 168, 255, 0.14)",
+                        },
+                        pointLabels: {
+                            color: "rgba(219, 232, 255, 0.74)",
+                            font: {
+                                family: "IBM Plex Mono",
+                                size: 11,
+                            },
+                        },
+                        ticks: {
+                            stepSize: radarStep,
+                            color: "rgba(184, 213, 255, 0.68)",
+                            backdropColor: "transparent",
+                            font: {
+                                family: "IBM Plex Mono",
+                                size: 10,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    document.querySelectorAll("[data-radar-chart]").forEach(createRadarChart);
+
     function createGauge(container) {
         const rawPercent = Math.max(0, Number(container.dataset.percent || 0));
         const percent = Math.min(rawPercent, 100);

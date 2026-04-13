@@ -768,6 +768,15 @@ select {
     min-width: 0;
 }
 
+.analysis-kpis {
+    margin-top: 2px;
+}
+
+.analysis-chart-grid,
+.analysis-panels {
+    margin-top: 2px;
+}
+
 .gauge-card {
     display: grid;
     gap: 12px;

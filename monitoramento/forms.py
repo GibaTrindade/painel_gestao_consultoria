@@ -268,25 +268,27 @@ class EquipeForm(StyledFormMixin, forms.ModelForm):
 class RegistroDiarioForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = RegistroDiario
-        fields = ["descricao_atividade", "quantidade_realizada", "justificativa"]
+        fields = ["descricao_atividade", "quantidade_realizada"]
         widgets = {
             "descricao_atividade": forms.Textarea(attrs={"rows": 3}),
-            "justificativa": forms.Textarea(attrs={"rows": 3}),
         }
 
     def __init__(self, *args, tarefa=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.apply_styling()
         self.tarefa = tarefa
-        self.fields["descricao_atividade"].label = "Informe o que foi feito"
+        self.fields["descricao_atividade"].label = "OBS"
+        self.fields["descricao_atividade"].required = False
         self.fields["quantidade_realizada"].label = "Informe o valor alcancado"
-        self.fields["justificativa"].label = "Justificativa"
+        self.fields["descricao_atividade"].help_text = "Campo opcional para observacoes livres sobre o lancamento."
 
     def save(self, commit=True, funcionario=None, tarefa=None):
         instance = super().save(commit=False)
         tarefa_obj = tarefa or self.tarefa
         instance.tarefa = tarefa_obj
         instance.funcionario = funcionario
+        instance.descricao_atividade = (instance.descricao_atividade or "").strip()
+        instance.justificativa = ""
         instance.quantidade_prevista = tarefa_obj.meta_quantidade if tarefa_obj else 0
         realizado = instance.quantidade_realizada or 0
         meta = tarefa_obj.meta_quantidade if tarefa_obj else 0

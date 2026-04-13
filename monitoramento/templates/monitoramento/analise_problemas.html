@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Analise de Problemas | Monitoramento{% endblock %}
+{% block page_section %}Leitura Analitica{% endblock %}
+{% block page_title %}Analise de Problemas{% endblock %}
+{% block page_subtitle %}Acompanhe gargalos do periodo, compare equipes e veja onde o nao atingimento esta se concentrando{% endblock %}
+
+{% block content %}
+<section class="dashboard-toolbar filter-panel">
+    <div>
+        <p class="overline">Competencia em analise</p>
+        <h3>{{ competencia_label }}</h3>
+        <p class="subtitle-inline">Uma camada separada do dashboard executivo para investigar gargalos, pendencias e concentracao dos problemas.</p>
+    </div>
+    <form method="get" class="dashboard-filter-form">
+        <input type="hidden" name="competencia" value="{{ competencia_input }}" data-dashboard-month-input>
+        <div class="month-switcher" data-month-switcher>
+            <button type="button" class="month-arrow" data-month-target="{{ competencia_anterior_input }}" aria-label="Mes anterior">&larr;</button>
+            <span class="month-switcher-label">{{ competencia_nome }}</span>
+            <button type="button" class="month-arrow" data-month-target="{{ competencia_proxima_input }}" aria-label="Proximo mes">&rarr;</button>
+        </div>
+    </form>
+</section>
+
+<section class="stats-grid compact analysis-kpis">
+    <article class="stat-card highlight">
+        <small>Tarefas abaixo da meta</small>
+        <strong>{{ total_abaixo_meta }}</strong>
+        <span>Ocorrencias no periodo</span>
+    </article>
+    <article class="stat-card">
+        <small>Justificativas pendentes</small>
+        <strong>{{ total_pendencias }}</strong>
+        <span>Fechamentos ainda sem causa registrada</span>
+    </article>
+    <article class="stat-card">
+        <small>Equipes afetadas</small>
+        <strong>{{ total_equipes_afetadas }}</strong>
+        <span>Com ao menos uma tarefa abaixo da meta</span>
+    </article>
+    <article class="stat-card">
+        <small>Profissionais afetados</small>
+        <strong>{{ total_funcionarios_afetados }}</strong>
+        <span>Pessoas expostas ao nao atingimento</span>
+    </article>
+</section>
+
+<section class="dashboard-chart-grid analysis-chart-grid">
+    <article class="chart-card neon-chart-card">
+        <div class="panel-header">
+            <h3>Categorias de Gargalo</h3>
+            <span>{{ competencia_label }}</span>
+        </div>
+        <p class="chart-intro">Distribuicao das causas registradas e das pendencias ainda sem causa definida na competencia.</p>
+        <div class="line-chart-shell">
+            <canvas
+                class="line-chart-canvas"
+                data-bar-chart
+                data-chart-title="Categorias de gargalo"
+                data-source-id="analise-categorias-data"
+                data-bar-color="#FF4FD8"
+            ></canvas>
+        </div>
+        <div class="mini-chart-legend neon-legend">
+            <span><i class="legend-swatch neon-pink"></i>Ocorrencias justificadas e pendentes</span>
+        </div>
+    </article>
+
+    <article class="chart-card neon-chart-card">
+        <div class="panel-header">
+            <h3>Comparativo entre Equipes</h3>
+            <span>Radar</span>
+        </div>
+        <p class="chart-intro">Compare equipes por percentuais normalizados de criticidade, pendencias, justificativas e atingimento medio.</p>
+        <div class="line-chart-shell">
+            <canvas
+                class="line-chart-canvas"
+                data-radar-chart
+                data-source-id="analise-radar-data"
+            ></canvas>
+        </div>
+        <div class="mini-chart-legend neon-legend">
+            {% for item in radar_series %}
+                <span><i class="legend-swatch" style="background: {{ item.color }}; color: {{ item.color }};"></i>{{ item.label }}</span>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="dashboard-chart-grid analysis-chart-grid">
+    <article class="chart-card neon-chart-card">
+        <div class="panel-header">
+            <h3>Profissionais com Mais Nao Atingimentos</h3>
+            <span>Top {{ ranking_funcionarios|length }}</span>
+        </div>
+        <p class="chart-intro">Ranking do periodo para identificar onde a consultoria ou a gestao deve aprofundar a conversa.</p>
+        <div class="line-chart-shell">
+            <canvas
+                class="line-chart-canvas"
+                data-bar-chart
+                data-chart-title="Profissionais abaixo da meta"
+                data-source-id="analise-ranking-funcionarios-data"
+                data-bar-color="#39D5FF"
+            ></canvas>
+        </div>
+        <div class="mini-chart-legend neon-legend">
+            <span><i class="legend-swatch neon-cyan"></i>Tarefas abaixo da meta</span>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h3>Ranking Analitico</h3>
+            <span>{{ ranking_funcionarios|length }} registros</span>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Profissional</th>
+                    <th>Equipe</th>
+                    <th>Nao atingiu</th>
+                    <th>Pendencias</th>
+                    <th>Atingimento medio</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in ranking_funcionarios %}
+                    <tr>
+                        <td>{{ item.nome }}</td>
+                        <td>{{ item.equipe }}</td>
+                        <td>{{ item.abaixo_meta }}</td>
+                        <td class="{% if item.pendencias %}text-warning{% endif %}">{{ item.pendencias }}</td>
+                        <td class="{% if item.media_percentual < 100 %}text-warning{% else %}text-success{% endif %}">{{ item.media_percentual }}%</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="5">Nenhuma ocorrencia encontrada para essa competencia.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+</section>
+
+<section class="panel-grid analysis-panels">
+    <article class="panel">
+        <div class="panel-header">
+            <h3>Acoes Mais Criticas</h3>
+            <span>{{ acoes_criticas|length }} registros</span>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Acao</th>
+                    <th>Indicador</th>
+                    <th>Nao atingiu</th>
+                    <th>Pendencias</th>
+                    <th>Categorias</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in acoes_criticas %}
+                    <tr>
+                        <td>{{ item.acao }}</td>
+                        <td>{{ item.indicador }}</td>
+                        <td>{{ item.abaixo_meta }}</td>
+                        <td class="{% if item.pendencias %}text-warning{% endif %}">{{ item.pendencias }}</td>
+                        <td>{{ item.categorias_resumo }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="5">Sem acoes criticas no periodo.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h3>Ocorrencias do Periodo</h3>
+            <span>{{ ocorrencias|length }} ocorrencias</span>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Profissional</th>
+                    <th>Equipe</th>
+                    <th>Tarefa</th>
+                    <th>Meta</th>
+                    <th>Realizado</th>
+                    <th>Causa</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in ocorrencias %}
+                    <tr>
+                        <td>{{ item.funcionario }}</td>
+                        <td>{{ item.equipe }}</td>
+                        <td>{{ item.tarefa }}</td>
+                        <td>{{ item.meta }}</td>
+                        <td>{{ item.realizado }}</td>
+                        <td class="{% if item.status == 'Pendente' %}text-warning{% endif %}">{{ item.categoria }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6">Nenhum nao atingimento encontrado na competencia.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ categorias_series|json_script:"analise-categorias-data" }}
+{{ ranking_funcionarios_series|json_script:"analise-ranking-funcionarios-data" }}
+{{ radar_series|json_script:"analise-radar-data" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

@@ -15,6 +15,7 @@ from .models import (
     Indicador,
     IndicadorHistoricoMensal,
     IndicadorMetaVigencia,
+    JustificativaNaoAtingimentoMensal,
     PerfilUsuario,
     RegistroDiario,
     Tarefa,
@@ -684,14 +685,38 @@ class FuncionarioAreaTests(BaseMonitoramentoTestCase):
             f"/app/metas/?tarefa={tarefa.id}",
             {
                 "tarefa_id": tarefa.id,
-                "descricao_atividade": "Pesou os atendimentos do dia",
+                "descricao_atividade": "Atendeu parcialmente a meta do dia.",
                 "quantidade_realizada": "5",
-                "justificativa": "Faltaram dois registros",
             },
         )
 
         self.assertEqual(response.status_code, 302)
         self.assertTrue(RegistroDiario.objects.filter(tarefa=tarefa, funcionario=self.funcionario, quantidade_realizada=Decimal("5")).exists())
+
+    def test_funcionario_pode_lancar_producao_sem_justificativa_diaria(self):
+        self.client_http.post("/accounts/organizacao/", {"codigo": "maracaja"})
+        self.client_http.post("/accounts/login/", {"username": "suel", "password": "func123"})
+
+        tarefa = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo="Atualizar painel",
+            meta_quantidade=Decimal("7"),
+        )
+
+        response = self.client_http.post(
+            f"/app/metas/?tarefa={tarefa.id}",
+            {
+                "tarefa_id": tarefa.id,
+                "descricao_atividade": "",
+                "quantidade_realizada": "3",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        registro = RegistroDiario.objects.get(tarefa=tarefa, funcionario=self.funcionario)
+        self.assertEqual(registro.descricao_atividade, "")
+        self.assertEqual(registro.justificativa, "")
 
     def test_lancamento_do_funcionario_atualiza_indicador_automaticamente(self):
         self.client_http.post("/accounts/organizacao/", {"codigo": "maracaja"})
@@ -708,9 +733,8 @@ class FuncionarioAreaTests(BaseMonitoramentoTestCase):
             f"/app/metas/?tarefa={tarefa.id}",
             {
                 "tarefa_id": tarefa.id,
-                "descricao_atividade": "Executou o processo do dia",
+                "descricao_atividade": "Observacao opcional do dia",
                 "quantidade_realizada": "12",
-                "justificativa": "",
             },
         )
 
@@ -723,6 +747,155 @@ class FuncionarioAreaTests(BaseMonitoramentoTestCase):
                 competencia=date(2026, 4, 1),
                 valor=Decimal("12"),
             ).exists()
+        )
+
+    def test_area_de_metas_mostra_realizado_apenas_da_competencia_atual(self):
+        self.client_http.post("/accounts/organizacao/", {"codigo": "maracaja"})
+        self.client_http.post("/accounts/login/", {"username": "suel", "password": "func123"})
+
+        tarefa = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo="Pesar criancas",
+            meta_quantidade=Decimal("20"),
+            previsto_quantidade=Decimal("20"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa,
+            funcionario=self.funcionario,
+            data=date(2026, 3, 20),
+            descricao_atividade="Entrega de marco",
+            quantidade_prevista=Decimal("20"),
+            quantidade_realizada=Decimal("12"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa,
+            funcionario=self.funcionario,
+            data=date(2026, 4, 10),
+            descricao_atividade="Entrega de abril",
+            quantidade_prevista=Decimal("20"),
+            quantidade_realizada=Decimal("5"),
+        )
+
+        response = self.client_http.get(f"/app/metas/?tarefa={tarefa.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["competencia_label"], "Abril de 2026")
+        self.assertEqual(response.context["tarefa_alvo"]["realizado_total"], Decimal("5"))
+        tarefa_lista = next(item for item in response.context["tarefas_funcionario"] if item["id"] == tarefa.id)
+        self.assertEqual(tarefa_lista["realizado_total"], Decimal("5"))
+
+    def test_resultados_mostram_pendencias_do_mes_anterior(self):
+        self.client_http.post("/accounts/organizacao/", {"codigo": "maracaja"})
+        self.client_http.post("/accounts/login/", {"username": "suel", "password": "func123"})
+
+        tarefa_abaixo = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo="Aplicar vacinas UPA 1",
+            meta_quantidade=Decimal("10"),
+        )
+        tarefa_atingida = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo="Aplicar vacinas UPA 2",
+            meta_quantidade=Decimal("8"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa_abaixo,
+            funcionario=self.funcionario,
+            data=date(2026, 3, 20),
+            descricao_atividade="Parcial de marco",
+            quantidade_prevista=Decimal("10"),
+            quantidade_realizada=Decimal("4"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa_atingida,
+            funcionario=self.funcionario,
+            data=date(2026, 3, 21),
+            descricao_atividade="Meta fechada",
+            quantidade_prevista=Decimal("8"),
+            quantidade_realizada=Decimal("8"),
+        )
+
+        response = self.client_http.get("/app/resultados/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["competencia_input"], "2026-03")
+        self.assertEqual(len(response.context["pendencias_justificativa"]), 1)
+        self.assertEqual(response.context["pendencias_justificativa"][0]["obj"].id, tarefa_abaixo.id)
+        pendencias_ids = [item["obj"].id for item in response.context["pendencias_justificativa"]]
+        self.assertIn(tarefa_abaixo.id, pendencias_ids)
+        self.assertNotIn(tarefa_atingida.id, pendencias_ids)
+
+    def test_funcionario_registra_justificativa_mensal_para_tarefa_abaixo_da_meta(self):
+        self.client_http.post("/accounts/organizacao/", {"codigo": "maracaja"})
+        self.client_http.post("/accounts/login/", {"username": "suel", "password": "func123"})
+
+        tarefa = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo="Aplicar vacinas UPA 1",
+            meta_quantidade=Decimal("10"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa,
+            funcionario=self.funcionario,
+            data=date(2026, 3, 20),
+            descricao_atividade="Parcial de marco",
+            quantidade_prevista=Decimal("10"),
+            quantidade_realizada=Decimal("4"),
+        )
+
+        response = self.client_http.post(
+            "/app/resultados/?competencia=2026-03",
+            {
+                "tarefa_id": tarefa.id,
+                "categoria": "falta_pessoal",
+                "justificativa": "Faltou equipe em dois plantoes.",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        justificativa = JustificativaNaoAtingimentoMensal.objects.get(tarefa=tarefa, competencia=date(2026, 3, 1))
+        self.assertEqual(justificativa.funcionario, self.funcionario)
+        self.assertEqual(justificativa.categoria, "falta_pessoal")
+        self.assertEqual(justificativa.justificativa, "Faltou equipe em dois plantoes.")
+
+    def test_justificativa_mensal_com_outro_exige_detalhamento(self):
+        self.client_http.post("/accounts/organizacao/", {"codigo": "maracaja"})
+        self.client_http.post("/accounts/login/", {"username": "suel", "password": "func123"})
+
+        tarefa = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo="Aplicar vacinas UPA 1",
+            meta_quantidade=Decimal("10"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa,
+            funcionario=self.funcionario,
+            data=date(2026, 3, 20),
+            descricao_atividade="Parcial de marco",
+            quantidade_prevista=Decimal("10"),
+            quantidade_realizada=Decimal("4"),
+        )
+
+        response = self.client_http.post(
+            "/app/resultados/?competencia=2026-03",
+            {
+                "tarefa_id": tarefa.id,
+                "categoria": "outro",
+                "justificativa": "",
+                "detalhe_outro": "",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "descreva o motivo no campo complementar")
+        self.assertFalse(
+            JustificativaNaoAtingimentoMensal.objects.filter(tarefa=tarefa, competencia=date(2026, 3, 1)).exists()
         )
 
 
@@ -880,3 +1053,45 @@ class DashboardTests(BaseMonitoramentoTestCase):
         self.assertTrue(
             any(item["nome"] == "Sueldison" for item in response.context["profissionais_modal_data"])
         )
+
+    def test_menu_exibe_link_da_analise_de_problemas(self):
+        self.login_gestor()
+
+        response = self.client_http.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Analise de Problemas")
+
+    def test_analise_de_problemas_consolida_gargalos_do_periodo(self):
+        self.login_gestor()
+        tarefa = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo="Triagem de abril",
+            meta_quantidade=Decimal("20"),
+            previsto_quantidade=Decimal("20"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa,
+            funcionario=self.funcionario,
+            data=date(2026, 4, 10),
+            descricao_atividade="Atendimento parcial",
+            quantidade_prevista=Decimal("20"),
+            quantidade_realizada=Decimal("8"),
+        )
+        JustificativaNaoAtingimentoMensal.objects.create(
+            tarefa=tarefa,
+            funcionario=self.funcionario,
+            competencia=date(2026, 4, 1),
+            categoria="falta_pessoal",
+            justificativa="Equipe reduzida no turno da tarde.",
+        )
+
+        response = self.client_http.get("/analises/problemas/?competencia=2026-04")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["competencia_input"], "2026-04")
+        self.assertEqual(response.context["total_abaixo_meta"], 1)
+        self.assertEqual(response.context["total_justificadas"], 1)
+        self.assertEqual(response.context["ocorrencias"][0]["categoria"], "Falta de pessoal")
+        self.assertTrue(any(item["label"] == "Falta de pessoal" for item in response.context["categorias_series"]))
