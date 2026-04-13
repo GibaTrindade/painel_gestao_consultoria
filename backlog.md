@@ -274,7 +274,7 @@ Entregas:
 - ranking de funcionarios/equipes abaixo da meta
 - relacao entre acao, indicador e justificativa
 
-Status: pendente
+Status: homologado
 Prioridade: alta
 
 ### Fase 3. Estruturar rede e consolidacao institucional
