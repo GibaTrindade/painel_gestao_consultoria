@@ -33,6 +33,10 @@
     }
 
     function getLineDefinitions(canvas) {
+        const sourceId = canvas.dataset.linesSourceId;
+        if (sourceId) {
+            return getJsonData(sourceId);
+        }
         try {
             return JSON.parse(canvas.dataset.lines || "[]");
         } catch (error) {

@@ -367,6 +367,107 @@ class AtribuicaoAcaoTests(BaseMonitoramentoTestCase):
         self.assertContains(response, "A soma dos valores mensais vinculados nao pode ultrapassar 30")
         self.assertFalse(AcaoAtribuicao.objects.filter(acao=self.acao, funcionario=self.funcionario, valor_mensal=Decimal("31")).exists())
 
+    def test_desativar_atribuicao_remove_tarefa_sem_historico(self):
+        atribuicao = AcaoAtribuicao.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            valor_mensal=Decimal("20"),
+            ativo=True,
+        )
+        tarefa = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo=self.acao.nome,
+            meta_quantidade=Decimal("20"),
+            previsto_quantidade=Decimal("20"),
+        )
+        self.login_gestor()
+
+        response = self.client_http.post(
+            f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&acao={self.acao.id}&modal=atribuir_acao",
+            {
+                "form_name": "alternar_atribuicao",
+                "acao_id": self.acao.id,
+                "atribuicao_id": atribuicao.id,
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        atribuicao.refresh_from_db()
+        self.assertFalse(atribuicao.ativo)
+        self.assertFalse(Tarefa.objects.filter(pk=tarefa.id).exists())
+
+    def test_desativar_atribuicao_cancela_tarefa_com_historico(self):
+        atribuicao = AcaoAtribuicao.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            valor_mensal=Decimal("20"),
+            ativo=True,
+        )
+        tarefa = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo=self.acao.nome,
+            meta_quantidade=Decimal("20"),
+            previsto_quantidade=Decimal("20"),
+            situacao=Tarefa.Situacao.EM_ANDAMENTO,
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa,
+            funcionario=self.funcionario,
+            data=date(2026, 4, 10),
+            descricao_atividade="Entrega parcial",
+            quantidade_prevista=Decimal("20"),
+            quantidade_realizada=Decimal("5"),
+            situacao=Tarefa.Situacao.EM_ANDAMENTO,
+        )
+        self.login_gestor()
+
+        response = self.client_http.post(
+            f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&acao={self.acao.id}&modal=atribuir_acao",
+            {
+                "form_name": "alternar_atribuicao",
+                "acao_id": self.acao.id,
+                "atribuicao_id": atribuicao.id,
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tarefa.refresh_from_db()
+        self.assertEqual(tarefa.situacao, Tarefa.Situacao.CANCELADA)
+
+    def test_remover_atribuicao_remove_ou_cancela_tarefas_da_acao(self):
+        atribuicao = AcaoAtribuicao.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            valor_mensal=Decimal("20"),
+            ativo=True,
+        )
+        tarefa = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo=self.acao.nome,
+            meta_quantidade=Decimal("20"),
+            previsto_quantidade=Decimal("20"),
+        )
+        self.login_gestor()
+
+        response = self.client_http.post(
+            f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&acao={self.acao.id}&modal=atribuir_acao",
+            {
+                "form_name": "remover_atribuicao",
+                "acao_id": self.acao.id,
+                "atribuicao_id": atribuicao.id,
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(AcaoAtribuicao.objects.filter(pk=atribuicao.id).exists())
+        self.assertFalse(Tarefa.objects.filter(pk=tarefa.id).exists())
+
     def test_pagina_acoes_considera_apenas_competencia_selecionada(self):
         self.login_gestor()
         tarefa = Tarefa.objects.create(
@@ -1054,16 +1155,162 @@ class DashboardTests(BaseMonitoramentoTestCase):
             any(item["nome"] == "Sueldison" for item in response.context["profissionais_modal_data"])
         )
 
-    def test_menu_exibe_link_da_analise_de_problemas(self):
-        self.login_gestor()
 
-        response = self.client_http.get("/")
+class HierarquiaClientesTests(TestCase):
+    def setUp(self):
+        self.prefeitura = Cliente.objects.create(nome="Prefeitura Central", codigo_acesso="pref-central", tipo="prefeitura")
+        self.upa = Cliente.objects.create(nome="UPA Centro", codigo_acesso="upa-centro", tipo="upa", parent=self.prefeitura)
+        self.upa_norte = Cliente.objects.create(nome="UPA Norte", codigo_acesso="upa-norte", tipo="upa", parent=self.prefeitura)
+        self.gestor = User.objects.create_user(username="gestor_hier", password="123456", first_name="Gestor")
+        UsuarioCliente.objects.create(user=self.gestor, cliente=self.prefeitura, tipo=PerfilUsuario.TipoPerfil.CLIENTE)
+        self.client_http = HttpClient()
+
+        self.equipe = Equipe.objects.create(cliente=self.upa, nome="Equipe UPA")
+        func_user = User.objects.create_user(username="func_hier", password="123456", first_name="Ana")
+        UsuarioCliente.objects.create(user=func_user, cliente=self.upa, tipo=PerfilUsuario.TipoPerfil.FUNCIONARIO)
+        self.funcionario = Funcionario.objects.create(cliente=self.upa, equipe=self.equipe, user=func_user, funcao="Agente")
+
+        self.diagnostico = Diagnostico.objects.create(
+            cliente=self.upa,
+            titulo="Cobertura vacinal da UPA",
+            periodo_inicio=date(2026, 1, 1),
+            periodo_fim=date(2026, 12, 31),
+            status=Diagnostico.Status.EXECUCAO,
+        )
+        self.indicador = Indicador.objects.create(
+            diagnostico=self.diagnostico,
+            nome="Vacinas aplicadas",
+            meta_valor=Decimal("100"),
+            valor_atual=Decimal("0"),
+        )
+        IndicadorMetaVigencia.objects.create(
+            indicador=self.indicador,
+            inicio_vigencia=date(2026, 4, 1),
+            valor_meta=Decimal("100"),
+        )
+        self.acao = AcaoMelhoria.objects.create(indicador=self.indicador, nome="Busca ativa", meta_mensal=Decimal("30"))
+        tarefa = Tarefa.objects.create(
+            acao=self.acao,
+            funcionario=self.funcionario,
+            titulo="Visitas domiciliares",
+            meta_quantidade=Decimal("30"),
+            previsto_quantidade=Decimal("30"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa,
+            funcionario=self.funcionario,
+            data=date(2026, 4, 10),
+            descricao_atividade="Aplicou vacinas",
+            quantidade_prevista=Decimal("30"),
+            quantidade_realizada=Decimal("12"),
+            situacao=Tarefa.Situacao.EM_ANDAMENTO,
+        )
+
+        equipe_norte = Equipe.objects.create(cliente=self.upa_norte, nome="Equipe Norte")
+        func_user_norte = User.objects.create_user(username="func_hier_norte", password="123456", first_name="Bia")
+        UsuarioCliente.objects.create(user=func_user_norte, cliente=self.upa_norte, tipo=PerfilUsuario.TipoPerfil.FUNCIONARIO)
+        funcionario_norte = Funcionario.objects.create(cliente=self.upa_norte, equipe=equipe_norte, user=func_user_norte, funcao="Agente")
+        diagnostico_norte = Diagnostico.objects.create(
+            cliente=self.upa_norte,
+            titulo="Cobertura vacinal da UPA Norte",
+            periodo_inicio=date(2026, 1, 1),
+            periodo_fim=date(2026, 12, 31),
+            status=Diagnostico.Status.EXECUCAO,
+        )
+        indicador_norte = Indicador.objects.create(
+            diagnostico=diagnostico_norte,
+            nome="Vacinas aplicadas",
+            meta_valor=Decimal("80"),
+            valor_atual=Decimal("0"),
+        )
+        IndicadorMetaVigencia.objects.create(
+            indicador=indicador_norte,
+            inicio_vigencia=date(2026, 4, 1),
+            valor_meta=Decimal("80"),
+        )
+        acao_norte = AcaoMelhoria.objects.create(indicador=indicador_norte, nome="Busca ativa norte", meta_mensal=Decimal("20"))
+        tarefa_norte = Tarefa.objects.create(
+            acao=acao_norte,
+            funcionario=funcionario_norte,
+            titulo="Visitas zona norte",
+            meta_quantidade=Decimal("20"),
+            previsto_quantidade=Decimal("20"),
+        )
+        RegistroDiario.objects.create(
+            tarefa=tarefa_norte,
+            funcionario=funcionario_norte,
+            data=date(2026, 4, 10),
+            descricao_atividade="Aplicou vacinas na zona norte",
+            quantidade_prevista=Decimal("20"),
+            quantidade_realizada=Decimal("20"),
+            situacao=Tarefa.Situacao.CONCLUIDA,
+        )
+
+    def login_gestor_pai(self):
+        self.client_http.post("/accounts/organizacao/", {"codigo": "pref-central"})
+        self.client_http.post("/accounts/login/", {"username": "gestor_hier", "password": "123456"})
+
+    def test_menu_de_cliente_expande_filhos_da_hierarquia(self):
+        self.login_gestor_pai()
+
+        response = self.client_http.get("/consolidacao/")
+
+        self.assertEqual(response.status_code, 200)
+        nomes = [item.nome for item in response.context["clientes_menu"]]
+        self.assertIn("Prefeitura Central", nomes)
+        self.assertIn("UPA Centro", nomes)
+        self.assertIn("UPA Norte", nomes)
+
+    def test_dashboard_do_cliente_pai_redireciona_para_consolidacao(self):
+        self.login_gestor_pai()
+
+        response = self.client_http.get(f"/?cliente={self.prefeitura.id}&competencia=2026-04")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/consolidacao/", response.url)
+
+    def test_menu_dashboard_unidade_aponta_para_primeira_unidade_filha(self):
+        self.login_gestor_pai()
+
+        response = self.client_http.get(f"/consolidacao/?cliente={self.prefeitura.id}&competencia=2026-04")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["dashboard_menu_url"], f"/?cliente={self.upa.id}&competencia=2026-04")
+        self.assertContains(response, f'href="/?cliente={self.upa.id}&amp;competencia=2026-04"')
+
+    def test_consolidacao_do_cliente_pai_agrega_dados_dos_filhos(self):
+        self.login_gestor_pai()
+
+        response = self.client_http.get(f"/consolidacao/?cliente={self.prefeitura.id}&competencia=2026-04")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_unidades"], 2)
+        self.assertEqual(response.context["total_realizado_rede"], Decimal("32"))
+        self.assertEqual(response.context["total_meta_rede"], Decimal("180"))
+        self.assertEqual(response.context["unidades_abaixo_meta"], 2)
+        self.assertTrue(any(item["nome"] == "UPA Centro" for item in response.context["ranking_unidades"]))
+        self.assertTrue(any(item["nome"] == "UPA Norte" for item in response.context["ranking_unidades"]))
+        self.assertContains(response, "Consolidacao Multiunidade")
+
+    def test_diagnosticos_do_cliente_pai_listam_itens_dos_filhos(self):
+        self.login_gestor_pai()
+
+        response = self.client_http.get(f"/diagnosticos/?cliente={self.prefeitura.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Cobertura vacinal da UPA")
+
+    def test_menu_exibe_link_da_analise_de_problemas(self):
+        self.login_gestor_pai()
+
+        response = self.client_http.get("/consolidacao/")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Analise de Problemas")
+        self.assertContains(response, "Consolidacao")
 
     def test_analise_de_problemas_consolida_gargalos_do_periodo(self):
-        self.login_gestor()
+        self.login_gestor_pai()
         tarefa = Tarefa.objects.create(
             acao=self.acao,
             funcionario=self.funcionario,
@@ -1091,7 +1338,10 @@ class DashboardTests(BaseMonitoramentoTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["competencia_input"], "2026-04")
-        self.assertEqual(response.context["total_abaixo_meta"], 1)
+        self.assertEqual(response.context["total_abaixo_meta"], 2)
         self.assertEqual(response.context["total_justificadas"], 1)
-        self.assertEqual(response.context["ocorrencias"][0]["categoria"], "Falta de pessoal")
+        self.assertIn(
+            "Falta de pessoal",
+            [item["categoria"] for item in response.context["ocorrencias"]],
+        )
         self.assertTrue(any(item["label"] == "Falta de pessoal" for item in response.context["categorias_series"]))

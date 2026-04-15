@@ -205,7 +205,8 @@ class AcaoForm(StyledFormMixin, forms.ModelForm):
         self.fields["responsavel"].required = False
         self.fields["responsavel"].empty_label = "Selecione quem responde por esta acao"
         if cliente:
-            usuarios_ids = UsuarioCliente.objects.filter(cliente=cliente, ativo=True).values_list("user_id", flat=True)
+            cliente_ids = cliente.get_descendant_ids(include_self=True)
+            usuarios_ids = UsuarioCliente.objects.filter(cliente_id__in=cliente_ids, ativo=True).values_list("user_id", flat=True)
             self.fields["responsavel"].queryset = User.objects.filter(id__in=usuarios_ids).order_by("first_name", "username")
 
 
@@ -224,8 +225,9 @@ class AtribuicaoAcaoForm(StyledFormMixin, forms.Form):
         super().__init__(*args, **kwargs)
         self.apply_styling()
         if cliente:
-            self.fields["profissional"].queryset = Funcionario.objects.filter(cliente=cliente)
-            self.fields["equipe_destino"].queryset = Equipe.objects.filter(cliente=cliente)
+            cliente_ids = cliente.get_descendant_ids(include_self=True)
+            self.fields["profissional"].queryset = Funcionario.objects.filter(cliente_id__in=cliente_ids)
+            self.fields["equipe_destino"].queryset = Equipe.objects.filter(cliente_id__in=cliente_ids)
         self.fields["profissional"].label = "Pesquisar"
         self.fields["valor_mensal"].label = "Valor mensal"
 

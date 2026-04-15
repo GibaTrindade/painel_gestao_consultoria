@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Sum
 from django.utils.text import slugify
@@ -40,12 +41,23 @@ class PerfilUsuario(models.Model):
 class Cliente(TimeStampedModel):
     nome = models.CharField(max_length=200)
     codigo_acesso = models.SlugField(max_length=60, unique=True, blank=True)
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="children",
+    )
     tipo = models.CharField(
         max_length=30,
         choices=[
+            ("rede", "Rede"),
             ("empresa", "Empresa"),
             ("secretaria", "Secretaria"),
             ("prefeitura", "Prefeitura"),
+            ("unidade", "Unidade"),
+            ("upa", "UPA"),
+            ("posto", "Posto"),
         ],
         default="empresa",
     )
@@ -61,7 +73,42 @@ class Cliente(TimeStampedModel):
     def __str__(self):
         return self.nome
 
+    def clean(self):
+        super().clean()
+        if not self.parent_id:
+            return
+        if self.parent_id == self.id:
+            raise ValidationError({"parent": "Um cliente nao pode ser pai dele mesmo."})
+
+        atual = self.parent
+        while atual:
+            if atual.id == self.id:
+                raise ValidationError({"parent": "Nao e permitido criar ciclo na hierarquia de clientes."})
+            atual = atual.parent
+
+    def get_ancestors(self, include_self=False):
+        ancestors = []
+        atual = self if include_self else self.parent
+        while atual:
+            ancestors.append(atual)
+            atual = atual.parent
+        return list(reversed(ancestors))
+
+    def get_descendant_ids(self, include_self=True):
+        ids = [self.id] if include_self and self.id else []
+        frontier = [self.id] if self.id else []
+        while frontier:
+            filhos = list(Cliente.objects.filter(parent_id__in=frontier).values_list("id", flat=True))
+            ids.extend(filhos)
+            frontier = filhos
+        return ids
+
+    @property
+    def nome_hierarquico(self):
+        return " > ".join(item.nome for item in self.get_ancestors(include_self=True))
+
     def save(self, *args, **kwargs):
+        self.full_clean()
         if not self.codigo_acesso:
             base = slugify(self.nome)[:50] or "organizacao"
             codigo = base
@@ -256,6 +303,7 @@ class Tarefa(TimeStampedModel):
         ATRASADA = "atrasada", "Atrasada"
         EM_ANDAMENTO = "em_andamento", "Em andamento"
         CONCLUIDA = "concluida", "Concluida"
+        CANCELADA = "cancelada", "Cancelada"
 
     class Prioridade(models.TextChoices):
         BAIXA = "baixa", "Baixa"

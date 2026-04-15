@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Consolidacao | Monitoramento{% endblock %}
+{% block page_section %}Visao de Rede{% endblock %}
+{% block page_title %}Consolidacao Multiunidade{% endblock %}
+{% block page_subtitle %}Leia a rede como um todo, compare unidades e identifique quem esta puxando os resultados para cima ou para baixo{% endblock %}
+
+{% block content %}
+<section class="dashboard-toolbar filter-panel">
+    <div>
+        <p class="overline">Competencia em consolidacao</p>
+        <h3>{{ competencia_label }}</h3>
+        <p class="subtitle-inline">
+            {{ cliente_atual.nome_hierarquico }} com {{ total_unidades }} unidades operacionais consolidadas.
+        </p>
+    </div>
+    <form method="get" class="dashboard-filter-form">
+        {% if cliente_atual %}
+            <input type="hidden" name="cliente" value="{{ cliente_atual.id }}">
+        {% endif %}
+        <input type="hidden" name="competencia" value="{{ competencia_input }}" data-dashboard-month-input>
+        <div class="month-switcher" data-month-switcher>
+            <button type="button" class="month-arrow" data-month-target="{{ competencia_anterior_input }}" aria-label="Mes anterior">&larr;</button>
+            <span class="month-switcher-label">{{ competencia_nome }}</span>
+            <button type="button" class="month-arrow" data-month-target="{{ competencia_proxima_input }}" aria-label="Proximo mes">&rarr;</button>
+        </div>
+    </form>
+</section>
+
+<section class="stats-grid consolidation-kpis">
+    <article class="stat-card highlight">
+        <small>Rede na competencia</small>
+        <strong>{{ percentual_rede|floatformat:1 }}%</strong>
+        <span>{{ total_realizado_rede|floatformat:2 }} / {{ total_meta_rede|floatformat:2 }}</span>
+    </article>
+    <article class="stat-card">
+        <small>Media dos ultimos 3 meses</small>
+        <strong>{{ media_rede_3_meses|floatformat:1 }}%</strong>
+        <span>Media consolidada da rede</span>
+    </article>
+    <article class="stat-card">
+        <small>Unidades abaixo da meta</small>
+        <strong>{{ unidades_abaixo_meta }}</strong>
+        <span>De {{ total_unidades }} unidades consolidadas</span>
+    </article>
+    <article class="stat-card">
+        <small>Nao atingimentos operacionais</small>
+        <strong>{{ total_tarefas_abaixo }}</strong>
+        <span>{{ total_justificadas }} justificadas e {{ total_pendencias }} pendentes</span>
+    </article>
+</section>
+
+<section class="panel-grid consolidation-summary-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h3>Leituras Rapidas</h3>
+            <span>{{ competencia_label }}</span>
+        </div>
+        <div class="summary-stack">
+            <div class="summary-highlight">
+                <small>Pior unidade no periodo</small>
+                {% if pior_unidade %}
+                    <strong>{{ pior_unidade.nome }}</strong>
+                    <span>{{ pior_unidade.percentual_float|floatformat:1 }}% de atingimento</span>
+                    <p>{{ pior_unidade.categorias_resumo }}</p>
+                {% else %}
+                    <strong>Nenhuma unidade consolidada</strong>
+                {% endif %}
+            </div>
+            <div class="summary-highlight success">
+                <small>Melhor unidade no periodo</small>
+                {% if melhor_unidade %}
+                    <strong>{{ melhor_unidade.nome }}</strong>
+                    <span>{{ melhor_unidade.percentual_float|floatformat:1 }}% de atingimento</span>
+                    <p>{{ melhor_unidade.categorias_resumo }}</p>
+                {% else %}
+                    <strong>Nenhuma unidade consolidada</strong>
+                {% endif %}
+            </div>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h3>Unidades Consolidadas</h3>
+            <span>{{ total_unidades }} unidades</span>
+        </div>
+        <div class="summary-chip-row">
+            {% for unidade in ranking_unidades %}
+                <span class="summary-chip {% if unidade.percentual_float < 100 %}warning{% else %}success{% endif %}">
+                    {{ unidade.nome }} · {{ unidade.percentual_float|floatformat:1 }}%
+                </span>
+            {% empty %}
+                <span class="summary-chip">Nenhuma unidade abaixo deste contexto.</span>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="dashboard-chart-grid">
+    <article class="chart-card neon-chart-card">
+        <div class="panel-header">
+            <h3>Curva de Atingimento por Unidade</h3>
+            <span>Ultimos 3 meses</span>
+        </div>
+        <p class="chart-intro">Compare a evolucao das unidades operacionais dentro do contexto pai selecionado.</p>
+        <div class="line-chart-shell">
+            <canvas
+                class="line-chart-canvas"
+                data-line-chart
+                data-chart-title="Atingimento por unidade"
+                data-source-id="consolidacao-series-data"
+                data-lines-source-id="consolidacao-lines-data"
+            ></canvas>
+        </div>
+        <div class="mini-chart-legend neon-legend">
+            {% for item in consolidado_lines %}
+                <span><i class="legend-swatch" style="background: {{ item.color }}; color: {{ item.color }};"></i>{{ item.label }}</span>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="chart-card neon-chart-card">
+        <div class="panel-header">
+            <h3>Comparativo Atual entre Unidades</h3>
+            <span>{{ competencia_label }}</span>
+        </div>
+        <p class="chart-intro">Leitura direta de atingimento para localizar rapidamente quem precisa de apoio imediato.</p>
+        <div class="line-chart-shell">
+            <canvas
+                class="line-chart-canvas"
+                data-bar-chart
+                data-chart-title="Atingimento das unidades"
+                data-source-id="consolidacao-ranking-data"
+                data-bar-color="#39D5FF"
+            ></canvas>
+        </div>
+        <div class="mini-chart-legend neon-legend">
+            <span><i class="legend-swatch neon-cyan"></i>Atingimento consolidado por unidade</span>
+        </div>
+    </article>
+</section>
+
+<section class="panel-grid">
+    <article class="panel">
+        <div class="panel-header">
+            <h3>Ranking das Unidades</h3>
+            <span>{{ ranking_unidades|length }} registros</span>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Unidade</th>
+                    <th>Realizado</th>
+                    <th>Meta</th>
+                    <th>Atingimento</th>
+                    <th>Media 3 meses</th>
+                    <th>Tarefas abaixo</th>
+                    <th>Pendencias</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in ranking_unidades %}
+                    <tr>
+                        <td>{{ item.nome }}</td>
+                        <td>{{ item.realizado|floatformat:2 }}</td>
+                        <td>{{ item.meta|floatformat:2 }}</td>
+                        <td class="{% if item.percentual_float < 50 %}text-danger{% elif item.percentual_float < 100 %}text-warning{% else %}text-success{% endif %}">
+                            {{ item.percentual_float|floatformat:1 }}%
+                        </td>
+                        <td>{{ item.media_trimestral|floatformat:1 }}%</td>
+                        <td>{{ item.tarefas_abaixo }}</td>
+                        <td class="{% if item.pendencias %}text-warning{% endif %}">{{ item.pendencias }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7">Nenhuma unidade operacional encontrada neste contexto.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <h3>Leitura de Gargalos por Unidade</h3>
+            <span>{{ competencia_label }}</span>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Unidade</th>
+                    <th>Indicadores abaixo</th>
+                    <th>Justificadas</th>
+                    <th>Pendencias</th>
+                    <th>Categorias recorrentes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in ranking_unidades %}
+                    <tr>
+                        <td>{{ item.nome }}</td>
+                        <td>{{ item.indicadores_abaixo }}</td>
+                        <td>{{ item.justificadas }}</td>
+                        <td class="{% if item.pendencias %}text-warning{% endif %}">{{ item.pendencias }}</td>
+                        <td>{{ item.categorias_resumo }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="5">Sem dados suficientes para consolidacao.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ consolidado_series|json_script:"consolidacao-series-data" }}
+{{ consolidado_lines|json_script:"consolidacao-lines-data" }}
+{{ comparativo_atual_series|json_script:"consolidacao-ranking-data" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

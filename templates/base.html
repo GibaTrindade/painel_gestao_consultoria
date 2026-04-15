@@ -22,14 +22,17 @@
 
                 <div class="client-chip">
                     {% if cliente_atual %}
-                        {{ cliente_atual.nome }}
+                        {{ cliente_atual.nome_hierarquico }}
                     {% else %}
                         Nenhum cliente vinculado
                     {% endif %}
                 </div>
 
                 <nav class="nav-links">
-                    <a href="{% url 'dashboard' %}" class="{% if pagina == 'dashboard' %}active{% endif %}"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
+                    {% if cliente_tem_filhos %}
+                        <a href="{% url 'consolidacao' %}" class="{% if pagina == 'consolidacao' %}active{% endif %}"><i class="bi bi-buildings-fill"></i><span>Consolidacao</span></a>
+                    {% endif %}
+                    <a href="{{ dashboard_menu_url }}" class="{% if pagina == 'dashboard' %}active{% endif %}"><i class="bi bi-grid-1x2-fill"></i><span>{% if cliente_tem_filhos %}Dashboard unidade{% else %}Dashboard{% endif %}</span></a>
                     <a href="{% url 'analise-problemas' %}" class="{% if pagina == 'analise-problemas' %}active{% endif %}"><i class="bi bi-graph-up-arrow"></i><span>Analise de Problemas</span></a>
                     <a href="{% url 'diagnosticos' %}" class="{% if pagina == 'diagnosticos' %}active{% endif %}"><i class="bi bi-clipboard2-pulse"></i><span>Diagnosticos</span></a>
                     <a href="{% url 'indicadores' %}" class="{% if pagina == 'indicadores' %}active{% endif %}"><i class="bi bi-speedometer2"></i><span>Indicadores</span></a>
@@ -68,7 +71,7 @@
                         <form method="get" class="client-form">
                             <select name="cliente" onchange="this.form.submit()">
                                 {% for item in clientes_menu %}
-                                    <option value="{{ item.id }}" {% if cliente_atual and item.id == cliente_atual.id %}selected{% endif %}>{{ item.nome }}</option>
+                                    <option value="{{ item.id }}" {% if cliente_atual and item.id == cliente_atual.id %}selected{% endif %}>{{ item.nome_hierarquico }}</option>
                                 {% endfor %}
                             </select>
                         </form>

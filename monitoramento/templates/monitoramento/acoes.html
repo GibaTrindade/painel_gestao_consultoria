@@ -259,7 +259,26 @@
                             </td>
                             <td>{{ atribuicao.valor_mensal }}</td>
                             <td><span class="tag {% if atribuicao.ativo %}success{% else %}danger{% endif %}">{% if atribuicao.ativo %}Ativo{% else %}Desativado{% endif %}</span></td>
-                            <td></td>
+                            <td class="table-action-cell">
+                                <div class="table-inline-actions">
+                                    <form method="post">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_name" value="alternar_atribuicao">
+                                        <input type="hidden" name="acao_id" value="{{ acao_alvo_modal.id }}">
+                                        <input type="hidden" name="atribuicao_id" value="{{ atribuicao.id }}">
+                                        <button type="submit" class="ghost-chip">
+                                            {% if atribuicao.ativo %}Desativar{% else %}Reativar{% endif %}
+                                        </button>
+                                    </form>
+                                    <form method="post" onsubmit="return confirm('Deseja remover esta atribuicao?');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_name" value="remover_atribuicao">
+                                        <input type="hidden" name="acao_id" value="{{ acao_alvo_modal.id }}">
+                                        <input type="hidden" name="atribuicao_id" value="{{ atribuicao.id }}">
+                                        <button type="submit" class="ghost-chip">Excluir</button>
+                                    </form>
+                                </div>
+                            </td>
                         </tr>
                     {% empty %}
                         <tr id="assignment-empty-row"><td colspan="5">Nenhuma atribuicao cadastrada.</td></tr>

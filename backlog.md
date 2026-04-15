@@ -293,7 +293,7 @@ Direcao sugerida:
 
 ou evoluir `Cliente` para suportar `parent`
 
-Status: pendente
+Status: homologado
 Prioridade: alta
 
 #### Item 8. Criar visao consolidada multiunidade
@@ -308,7 +308,7 @@ Entregas:
 - media de 3 meses
 - ranking das piores e melhores unidades
 
-Status: pendente
+Status: concluido tecnicamente
 Prioridade: alta
 
 ### Fase 4. Maturidade operacional
@@ -323,6 +323,35 @@ Entregas:
 - definir o que acontece com tarefa ja criada
 - registrar historico de alteracoes
 - evitar tarefa "orfã"
+
+Status: concluido tecnicamente
+Prioridade: media
+
+#### Item 9.1. Explicitar unidade de referencia na criacao de diagnosticos
+Objetivo:
+
+- evitar ambiguidade ao criar diagnosticos dentro de contextos hierarquicos
+
+Entregas:
+
+- mostrar no modal de diagnostico em qual unidade/cliente o registro sera criado
+- quando o contexto atual for um cliente-pai, exigir a escolha da unidade filha de destino
+- manter criacao automatica pelo contexto apenas quando o usuario estiver dentro de uma unidade operacional
+
+Status: pendente
+Prioridade: media
+
+#### Item 9.2. Permitir editar atribuicoes existentes
+Objetivo:
+
+- permitir ajuste direto de valor, modo de rateio e status de atribuicoes ja cadastradas
+
+Entregas:
+
+- abrir edicao da atribuicao direto no modal de atribuicoes
+- permitir alterar valor mensal sem precisar excluir e recriar
+- permitir revisar e salvar novamente o rateio manual da equipe
+- sincronizar as tarefas impactadas apos a edicao
 
 Status: pendente
 Prioridade: media

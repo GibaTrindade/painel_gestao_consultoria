@@ -10,6 +10,7 @@ from .models import (
     Funcionario,
     Indicador,
     IndicadorHistoricoMensal,
+    IndicadorMetaVigencia,
     PerfilUsuario,
     RegistroDiario,
     Tarefa,
@@ -26,9 +27,9 @@ class PerfilUsuarioAdmin(admin.ModelAdmin):
 
 @admin.register(Cliente)
 class ClienteAdmin(admin.ModelAdmin):
-    list_display = ("nome", "codigo_acesso", "tipo", "responsavel", "cidade", "uf", "ativo")
-    list_filter = ("tipo", "ativo", "uf")
-    search_fields = ("nome", "codigo_acesso", "responsavel", "cidade")
+    list_display = ("nome", "parent", "codigo_acesso", "tipo", "responsavel", "cidade", "uf", "ativo")
+    list_filter = ("tipo", "ativo", "uf", "parent")
+    search_fields = ("nome", "codigo_acesso", "responsavel", "cidade", "parent__nome")
 
 
 @admin.register(UsuarioCliente)
@@ -90,6 +91,13 @@ class RegistroDiarioAdmin(admin.ModelAdmin):
 @admin.register(IndicadorHistoricoMensal)
 class IndicadorHistoricoMensalAdmin(admin.ModelAdmin):
     list_display = ("indicador", "competencia", "valor", "meta")
+    list_filter = ("indicador__diagnostico__cliente",)
+    search_fields = ("indicador__nome",)
+
+
+@admin.register(IndicadorMetaVigencia)
+class IndicadorMetaVigenciaAdmin(admin.ModelAdmin):
+    list_display = ("indicador", "inicio_vigencia", "fim_vigencia", "valor_meta")
     list_filter = ("indicador__diagnostico__cliente",)
     search_fields = ("indicador__nome",)
 
