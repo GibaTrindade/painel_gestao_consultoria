@@ -1,0 +1,48 @@
+<article class="action-result" aria-labelledby="action-title-{{ acao.id }}">
+    <header class="action-result-heading">
+        <div><h3 id="action-title-{{ acao.id }}">{{ acao.nome }}</h3><p class="result-indicator">Indicador: {{ acao.indicador }}</p></div>
+        {% if show_management %}<span class="result-status {{ acao.status }}">{{ acao.status_display }}</span>{% endif %}
+    </header>
+    <div class="action-summary">
+        <div class="collective-production">
+            <span class="result-label">Produção total da ação no mês</span>
+            <p class="result-total"><strong>{{ acao.realizado_total|floatformat:"-2" }}</strong> <span>de {{ acao.meta_mensal|floatformat:"-2" }} {{ acao.unidade }}</span></p>
+            <p class="result-explanation">Soma de {{ acao.profissionais|length }} {% if acao.profissionais|length == 1 %}profissional{% else %}profissionais{% endif %} · {{ acao.percentual_realizado|floatformat:1 }}% da meta total</p>
+        </div>
+        <div class="action-coordinator">
+            <span class="result-label">Coordenador da ação</span><strong>{{ acao.coordenador_nome }}</strong>
+            {% if acao.coordenador_executa %}<p class="result-explanation">Produção própria neste mês: <b>{{ acao.coordenador_realizado|floatformat:"-2" }} {{ acao.unidade }}</b>. Já incluída no total da ação.</p>
+            {% elif acao.responsavel %}<p class="result-explanation">Acompanha a execução. Não tem produção própria registrada nesta ação.</p>
+            {% else %}<p class="result-explanation">Esta ação ainda não tem um coordenador definido.</p>{% endif %}
+        </div>
+    </div>
+    <h4 class="contributions-title">Quem compõe esse total</h4>
+    <div class="results-table-scroll" role="region" aria-label="Produção individual em {{ acao.nome }}" tabindex="0">
+        <table class="contributions-table">
+            <thead><tr><th scope="col">Profissional / equipe</th><th scope="col">Meta individual<br>do mês</th><th scope="col">Realizado<br>pela pessoa</th><th scope="col">Falta para<br>a meta individual</th>{% if show_causes %}<th scope="col">Situação e justificativa</th>{% endif %}</tr></thead>
+            <tbody>
+                {% for pessoa in acao.profissionais %}
+                    <tr>
+                        <th scope="row"><span class="person-name">{{ pessoa.nome }}</span><span class="person-team">{{ pessoa.equipe }}</span></th>
+                        <td>{{ pessoa.meta|floatformat:"-2" }}</td><td class="person-production">{{ pessoa.realizado|floatformat:"-2" }}</td><td>{% if pessoa.sem_meta %}—{% else %}{{ pessoa.saldo|floatformat:"-2" }}{% endif %}</td>
+                        {% if show_causes %}<td class="individual-cause">
+                            <span class="result-status {{ pessoa.tom }}">{{ pessoa.situacao }}</span>
+                            {% for problema in pessoa.problemas %}<div class="cause-detail">
+                                {% if pessoa.tarefas|length > 1 %}<strong>{{ problema.tarefa }}</strong>{% endif %}
+                                {% if problema.pendente %}<span class="cause-missing">Justificativa ainda não registrada</span>
+                                {% else %}<strong>{{ problema.categoria }}</strong><p>{{ problema.justificativa|default:"Causa registrada, sem observação adicional." }}</p>{% if problema.detalhe_outro %}<p>{{ problema.detalhe_outro }}</p>{% endif %}{% endif %}
+                            </div>{% endfor %}
+                        </td>{% endif %}
+                    </tr>
+                {% empty %}<tr><td colspan="{% if show_causes %}5{% else %}4{% endif %}">Nenhum profissional recebeu uma tarefa nesta ação.</td></tr>{% endfor %}
+            </tbody>
+            <tfoot><tr><th scope="row">Total de todos os profissionais</th><td colspan="{% if show_causes %}4{% else %}3{% endif %}">{{ acao.realizado_total|floatformat:"-2" }} {{ acao.unidade }} realizados · Meta total da ação: {{ acao.meta_mensal|floatformat:"-2" }} {{ acao.unidade }}</td></tr></tfoot>
+        </table>
+    </div>
+    <div class="result-actions">
+        {% if show_management %}
+            <a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}diagnostico={{ acao.diagnostico_id }}&indicador={{ acao.indicador_id }}&competencia={{ competencia_input }}&acao={{ acao.id }}&modal=atribuir_acao"><i class="bi bi-diagram-3" aria-hidden="true"></i>Distribuir metas</a>
+            {% if acao.possui_equipes %}<a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}diagnostico={{ acao.diagnostico_id }}&indicador={{ acao.indicador_id }}&competencia={{ competencia_input }}&acao={{ acao.id }}&modal=detalhe_equipes">Ver rateio por equipe</a>{% endif %}
+        {% else %}<a class="ghost-chip" href="{% url 'acoes' %}?cliente={{ cliente_atual.id }}&diagnostico={{ acao.diagnostico_id }}&indicador={{ acao.indicador_id }}&competencia={{ competencia_input }}">Abrir esta ação</a>{% endif %}
+    </div>
+</article>

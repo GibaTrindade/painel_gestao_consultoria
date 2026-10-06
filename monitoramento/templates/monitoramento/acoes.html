@@ -65,74 +65,29 @@
 {% if indicador_selecionado %}
 <section class="stats-grid compact">
     <article class="stat-card">
-        <span>Valor do Indicador na Competencia</span>
+        <span>Total de todos os profissionais no mês</span>
         <strong>{{ indicador_valor_competencia }}</strong>
         <small>{{ indicador_selecionado.unidade }}</small>
     </article>
     <article class="stat-card">
-        <span>Meta do Indicador na Competencia</span>
+        <span>Meta total do indicador no mês</span>
         <strong>{{ indicador_meta_competencia }}</strong>
         <small>{{ indicador_selecionado.unidade }} | {{ indicador_percentual_competencia|floatformat:0 }}%</small>
     </article>
 </section>
 {% endif %}
 
-<section class="panel">
+<section class="panel results-page">
     <div class="panel-header">
-        <h3>Acoes de Melhoria Cadastradas</h3>
-        <div class="panel-actions">
-            <span>{{ acoes.count }} registros</span>
-            <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}&modal=nova_acao">Nova Acao</a>
-        </div>
+        <h3>Ações e produção dos profissionais</h3>
+        <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}&modal=nova_acao">Nova ação</a>
     </div>
-    <p class="table-note">Os percentuais abaixo consideram apenas os registros lancados na competencia selecionada.</p>
-    <table>
-        <thead>
-            <tr>
-                <th>Nome</th>
-                <th>Meta mensal</th>
-                <th>Realizado no mes</th>
-                <th>Realizado</th>
-                <th>Responsavel</th>
-                <th>Status</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for acao in acoes_lista %}
-                <tr>
-                    <td>{{ acao.nome }}</td>
-                    <td>{{ acao.meta_mensal }}</td>
-                    <td>{{ acao.realizado_total }}</td>
-                    <td>{{ acao.percentual_realizado|floatformat:0 }}%</td>
-                    <td>
-                        {% if acao.responsavel %}
-                            {{ acao.responsavel.get_full_name|default:acao.responsavel.username }}
-                        {% else %}
-                            Sem responsavel definido
-                        {% endif %}
-                    </td>
-                    <td><span class="tag {% if acao.status == 'ativa' %}success{% elif acao.status == 'concluida' %}info{% else %}danger{% endif %}">{{ acao.status_display }}</span></td>
-                    <td class="table-action-cell">
-                        <div class="table-inline-actions">
-                            <a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}&acao={{ acao.id }}&modal=atribuir_acao">
-                                <i class="bi bi-diagram-3"></i>
-                                Atribuicoes
-                            </a>
-                            {% if acao.possui_equipes %}
-                                <a class="ghost-chip" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}&acao={{ acao.id }}&modal=detalhe_equipes">
-                                    <i class="bi bi-people"></i>
-                                    Ver equipes
-                                </a>
-                            {% endif %}
-                        </div>
-                    </td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="7">Nenhuma acao encontrada.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <p class="results-intro">O total de cada ação soma os lançamentos de todos os profissionais. O coordenador acompanha a ação; a produção de cada pessoa aparece separadamente abaixo.</p>
+    {% for acao in acoes_lista %}
+        {% include "monitoramento/_resultado_acao.html" with show_management=True %}
+    {% empty %}
+        <p class="results-empty">Ainda não há ações neste indicador. Cadastre uma ação e distribua a meta aos profissionais ou às equipes.</p>
+    {% endfor %}
 </section>
 
 {% if modal == 'nova_acao' %}
@@ -151,7 +106,7 @@
                 <div>{{ acao_form.status.label_tag }} {{ acao_form.status }}</div>
             </div>
             <div class="form-row single">{{ acao_form.responsavel.label_tag }} {{ acao_form.responsavel }}</div>
-            <div class="table-note">Responsavel da acao e quem responde pela execucao do plano. Nao precisa ser quem executa a tarefa no dia a dia.</div>
+            <div class="table-note">O coordenador acompanha a ação. Os executores e suas metas são definidos nas atribuições.</div>
             <div class="modal-actions">
                 <a class="ghost-btn" href="{% url 'acoes' %}?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}{% if indicador_selecionado %}indicador={{ indicador_selecionado.id }}&{% endif %}competencia={{ competencia_input }}">Cancelar</a>
                 <button type="submit" class="primary-btn" formnovalidate>Confirmar</button>

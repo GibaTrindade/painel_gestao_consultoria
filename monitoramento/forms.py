@@ -201,9 +201,9 @@ class AcaoForm(StyledFormMixin, forms.ModelForm):
         self.apply_styling()
         self.fields["nome"].label = "Nome da acao"
         self.fields["meta_mensal"].label = "Valor"
-        self.fields["responsavel"].label = "Responsavel da acao"
+        self.fields["responsavel"].label = "Coordenador da ação"
         self.fields["responsavel"].required = False
-        self.fields["responsavel"].empty_label = "Selecione quem responde por esta acao"
+        self.fields["responsavel"].empty_label = "Selecione quem acompanha esta ação"
         if cliente:
             usuarios_ids = UsuarioCliente.objects.filter(cliente=cliente, ativo=True).values_list("user_id", flat=True)
             self.fields["responsavel"].queryset = User.objects.filter(id__in=usuarios_ids).order_by("first_name", "username")

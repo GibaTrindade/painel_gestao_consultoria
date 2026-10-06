@@ -936,257 +936,119 @@ def dashboard_view(request):
     return render(request, "monitoramento/dashboard.html", context)
 
 
+def _resultado_acao(acao, tarefas, competencia):
+    """Separate collective production, coordination and individual contributions."""
+    fim = _proxima_competencia(competencia)
+    atual = timezone.localdate().replace(day=1)
+    fechado = competencia < atual
+    futuro = competencia > atual
+    profissionais = {}
+    ocorrencias = []
+    for tarefa in tarefas:
+        funcionario = tarefa.funcionario
+        pessoa = profissionais.setdefault(funcionario.id, {
+            "id": funcionario.id, "user_id": funcionario.user_id,
+            "nome": funcionario.user.get_full_name() or funcionario.user.username,
+            "equipe": funcionario.equipe.nome if funcionario.equipe else "Sem equipe",
+            "meta": Decimal("0"), "realizado": Decimal("0"), "tarefas": [],
+        })
+        realizado = sum((r.quantidade_realizada for r in tarefa.registros.all()
+                         if competencia <= r.data < fim), Decimal("0"))
+        meta = tarefa.meta_quantidade or Decimal("0")
+        abaixo = meta > 0 and realizado < meta
+        justificativa = next((j for j in tarefa.justificativas_mensais.all()
+                              if j.competencia == competencia), None)
+        detalhe = {
+            "tarefa": tarefa.titulo, "funcionario": pessoa["nome"],
+            "equipe": pessoa["equipe"], "meta": meta, "realizado": realizado,
+            "saldo": max(meta - realizado, Decimal("0")),
+            "abaixo": abaixo, "pendente": fechado and abaixo and not justificativa,
+            "categoria": justificativa.get_categoria_display() if justificativa else "",
+            "justificativa": justificativa.justificativa if justificativa else "",
+            "detalhe_outro": justificativa.detalhe_outro if justificativa else "",
+        }
+        pessoa["meta"] += meta
+        pessoa["realizado"] += realizado
+        pessoa["tarefas"].append(detalhe)
+        if fechado and abaixo:
+            ocorrencias.append(detalhe)
+    pessoas = sorted(profissionais.values(), key=lambda p: (p["equipe"], p["nome"]))
+    for pessoa in pessoas:
+        pessoa["saldo"] = max(pessoa["meta"] - pessoa["realizado"], Decimal("0"))
+        pessoa["percentual"] = _percentual(pessoa["realizado"], pessoa["meta"])
+        pessoa["sem_meta"] = pessoa["meta"] <= 0
+        pessoa["abaixo"] = any(t["abaixo"] for t in pessoa["tarefas"])
+        pessoa["pendente"] = any(t["pendente"] for t in pessoa["tarefas"])
+        pessoa["problemas"] = [t for t in pessoa["tarefas"] if fechado and t["abaixo"]]
+        if pessoa["sem_meta"]:
+            pessoa["situacao"], pessoa["tom"] = "Sem meta definida", "neutral"
+        elif futuro:
+            pessoa["situacao"], pessoa["tom"] = "Mês futuro", "neutral"
+        elif not fechado:
+            pessoa["situacao"], pessoa["tom"] = "Mês em andamento", "info"
+        elif pessoa["abaixo"]:
+            pessoa["situacao"], pessoa["tom"] = "Abaixo da meta", "warning"
+        else:
+            pessoa["situacao"], pessoa["tom"] = "Meta atingida", "success"
+    total = sum((p["realizado"] for p in pessoas), Decimal("0"))
+    return {
+        "id": acao.id, "nome": acao.nome, "indicador": acao.indicador.nome,
+        "indicador_id": acao.indicador_id,
+        "diagnostico_id": acao.indicador.diagnostico_id,
+        "unidade": acao.indicador.unidade,
+        "responsavel": acao.responsavel,
+        "coordenador_nome": (acao.responsavel.get_full_name() or acao.responsavel.username)
+            if acao.responsavel else "Ainda não definido",
+        "coordenador_realizado": sum((p["realizado"] for p in pessoas
+            if acao.responsavel_id == p["user_id"]), Decimal("0")),
+        "coordenador_executa": any(t.funcionario.user_id == acao.responsavel_id for t in tarefas),
+        "meta_mensal": acao.meta_mensal, "realizado_total": total,
+        "percentual_realizado": _percentual(total, acao.meta_mensal),
+        "profissionais": pessoas, "ocorrencias": ocorrencias,
+        "total_pendencias": sum(t["pendente"] for t in ocorrencias),
+        "total_justificadas": sum(bool(t["categoria"]) for t in ocorrencias),
+        "status": acao.status, "status_display": acao.get_status_display(),
+        "possui_equipes": any(a.equipe_id for a in acao.atribuicoes.all()),
+    }
+
+
 @login_required
 def analise_problemas_view(request):
     context = _base_context(request, "analise-problemas")
     if context["perfil_tipo"] == "funcionario":
         return redirect("funcionario-metas")
-
     cliente = context["cliente_atual"]
     competencia = _parse_competencia(request.GET.get("competencia"))
-    competencia_final = _proxima_competencia(competencia)
-    competencia_anterior = _competencia_anterior(competencia)
-    competencia_proxima = _proxima_competencia(competencia)
-
-    tarefas = (
-        Tarefa.objects.filter(funcionario__cliente=cliente)
-        .select_related(
-            "funcionario__user",
-            "funcionario__equipe",
-            "acao",
-            "acao__indicador",
-            "acao__indicador__diagnostico",
-        )
-        .prefetch_related("registros", "justificativas_mensais")
-        if cliente
-        else Tarefa.objects.none()
-    )
-    justificativas = (
-        JustificativaNaoAtingimentoMensal.objects.filter(
-            tarefa__funcionario__cliente=cliente,
-            competencia=competencia,
-        )
-        .select_related(
-            "funcionario__user",
-            "funcionario__equipe",
-            "tarefa",
-            "tarefa__acao",
-            "tarefa__acao__indicador",
-            "tarefa__acao__indicador__diagnostico",
-        )
-        if cliente
-        else JustificativaNaoAtingimentoMensal.objects.none()
-    )
-
-    registros_competencia = list(
-        RegistroDiario.objects.filter(
-            funcionario__cliente=cliente,
-            data__gte=competencia,
-            data__lt=competencia_final,
-        ).select_related("tarefa")
-        if cliente
-        else RegistroDiario.objects.none()
-    )
-    registros_map = {}
-    for registro in registros_competencia:
-        registros_map.setdefault(registro.tarefa_id, []).append(registro)
-
-    justificativas_map = {item.tarefa_id: item for item in justificativas}
-    ocorrencias = []
-    funcionario_metricas = {}
-    equipe_metricas = {}
-    acao_metricas = {}
-
-    for tarefa in tarefas:
-        resumo = _resumo_tarefa_competencia(tarefa, competencia, registros_map=registros_map)
-        if resumo["meta"] <= 0:
-            continue
-
-        equipe_nome = tarefa.funcionario.equipe.nome if tarefa.funcionario.equipe else "Sem equipe"
-        funcionario_nome = tarefa.funcionario.user.get_full_name() or tarefa.funcionario.user.username
-        percentual = float(resumo["percentual"])
-        abaixo_da_meta = resumo["abaixo_da_meta"]
-        justificativa = justificativas_map.get(tarefa.id)
-
-        funcionario_item = funcionario_metricas.setdefault(
-            tarefa.funcionario_id,
-            {
-                "nome": funcionario_nome,
-                "equipe": equipe_nome,
-                "abaixo_meta": 0,
-                "pendencias": 0,
-                "percentuais": [],
-            },
-        )
-        funcionario_item["percentuais"].append(percentual)
-        if abaixo_da_meta:
-            funcionario_item["abaixo_meta"] += 1
-            if not justificativa:
-                funcionario_item["pendencias"] += 1
-
-        equipe_item = equipe_metricas.setdefault(
-            equipe_nome,
-            {
-                "nome": equipe_nome,
-                "abaixo_meta": 0,
-                "pendencias": 0,
-                "justificadas": 0,
-                "percentuais": [],
-            },
-        )
-        equipe_item["percentuais"].append(percentual)
-        if abaixo_da_meta:
-            equipe_item["abaixo_meta"] += 1
-            if justificativa:
-                equipe_item["justificadas"] += 1
-            else:
-                equipe_item["pendencias"] += 1
-
-        acao_key = tarefa.acao_id
-        acao_item = acao_metricas.setdefault(
-            acao_key,
-            {
-                "acao": tarefa.acao.nome,
-                "indicador": tarefa.acao.indicador.nome,
-                "diagnostico": tarefa.acao.indicador.diagnostico.titulo,
-                "abaixo_meta": 0,
-                "pendencias": 0,
-                "categorias": {},
-            },
-        )
-        if abaixo_da_meta:
-            acao_item["abaixo_meta"] += 1
-            if justificativa:
-                categoria_label = justificativa.get_categoria_display()
-                acao_item["categorias"][categoria_label] = acao_item["categorias"].get(categoria_label, 0) + 1
-            else:
-                acao_item["pendencias"] += 1
-
-            ocorrencias.append(
-                {
-                    "tarefa": tarefa.titulo,
-                    "acao": tarefa.acao.nome,
-                    "indicador": tarefa.acao.indicador.nome,
-                    "diagnostico": tarefa.acao.indicador.diagnostico.titulo,
-                    "funcionario": funcionario_nome,
-                    "equipe": equipe_nome,
-                    "meta": resumo["meta"],
-                    "realizado": resumo["realizado_total"],
-                    "categoria": justificativa.get_categoria_display() if justificativa else "Pendente",
-                    "status": "Justificado" if justificativa else "Pendente",
-                }
-            )
-
-    total_abaixo_meta = sum(item["abaixo_meta"] for item in funcionario_metricas.values())
-    total_pendencias = sum(item["pendencias"] for item in funcionario_metricas.values())
-    total_justificadas = justificativas.count() if cliente else 0
-    total_equipes_afetadas = sum(1 for item in equipe_metricas.values() if item["abaixo_meta"] > 0)
-    total_funcionarios_afetados = sum(1 for item in funcionario_metricas.values() if item["abaixo_meta"] > 0)
-
-    categorias_contagem = {label: 0 for _, label in JustificativaNaoAtingimentoMensal.CategoriaGargalo.choices}
-    for justificativa in justificativas:
-        categorias_contagem[justificativa.get_categoria_display()] = categorias_contagem.get(
-            justificativa.get_categoria_display(),
-            0,
-        ) + 1
-
-    if total_pendencias:
-        categorias_contagem["Pendentes sem causa"] = total_pendencias
-
-    categorias_series = [
-        {"label": label, "valor": total}
-        for label, total in categorias_contagem.items()
-        if total > 0
-    ] or [{"label": "Sem categorias no periodo", "valor": 0}]
-
-    ranking_funcionarios = []
-    for item in funcionario_metricas.values():
-        media_percentual = round(sum(item["percentuais"]) / len(item["percentuais"]), 1) if item["percentuais"] else 0
-        ranking_funcionarios.append(
-            {
-                "nome": item["nome"],
-                "equipe": item["equipe"],
-                "abaixo_meta": item["abaixo_meta"],
-                "pendencias": item["pendencias"],
-                "media_percentual": media_percentual,
-            }
-        )
-    ranking_funcionarios.sort(key=lambda item: (-item["abaixo_meta"], item["media_percentual"], item["nome"]))
-
-    ranking_funcionarios_series = [
-        {"label": item["nome"], "valor": item["abaixo_meta"]}
-        for item in ranking_funcionarios[:6]
-    ] or [{"label": "Sem ocorrencias", "valor": 0}]
-
-    comparativo_equipes = []
-    radar_colors = ["#39D5FF", "#FF4FD8", "#7CFFB2", "#B6FF3B"]
-    for index, item in enumerate(sorted(equipe_metricas.values(), key=lambda equipe: equipe["nome"])):
-        media_percentual = round(sum(item["percentuais"]) / len(item["percentuais"]), 1) if item["percentuais"] else 0
-        total_ocorrencias_equipe = item["abaixo_meta"] + item["justificadas"]
-        pendencias_percentual = round((item["pendencias"] / item["abaixo_meta"] * 100), 1) if item["abaixo_meta"] else 0
-        justificadas_percentual = round((item["justificadas"] / item["abaixo_meta"] * 100), 1) if item["abaixo_meta"] else 0
-        criticidade_percentual = round((item["abaixo_meta"] / total_ocorrencias_equipe * 100), 1) if total_ocorrencias_equipe else 0
-        comparativo_equipes.append(
-            {
-                "label": item["nome"],
-                "color": radar_colors[index % len(radar_colors)],
-                "abaixo_meta": item["abaixo_meta"],
-                "pendencias": item["pendencias"],
-                "justificadas": item["justificadas"],
-                "atingimento_medio": media_percentual,
-                "criticidade_percentual": criticidade_percentual,
-                "pendencias_percentual": pendencias_percentual,
-                "justificadas_percentual": justificadas_percentual,
-            }
-        )
-
-    radar_series = [
-        {
-            "label": item["label"],
-            "abaixo_meta": item["criticidade_percentual"],
-            "pendencias": item["pendencias_percentual"],
-            "justificadas": item["justificadas_percentual"],
-            "atingimento_medio": item["atingimento_medio"],
-            "color": item["color"],
-        }
-        for item in comparativo_equipes[:4]
-    ]
-
-    acoes_criticas = []
-    for item in acao_metricas.values():
-        categorias_resumo = ", ".join(
-            f"{categoria}: {quantidade}" for categoria, quantidade in sorted(item["categorias"].items())
-        ) or "Sem justificativas registradas"
-        acoes_criticas.append(
-            {
-                **item,
-                "categorias_resumo": categorias_resumo,
-            }
-        )
-    acoes_criticas.sort(key=lambda item: (-item["abaixo_meta"], -item["pendencias"], item["acao"]))
-
-    ocorrencias.sort(key=lambda item: (item["status"] != "Pendente", item["equipe"], item["funcionario"], item["tarefa"]))
-
-    context.update(
-        {
-            "competencia_input": competencia.strftime("%Y-%m"),
-            "competencia_label": _formatar_competencia(competencia),
-            "competencia_nome": _formatar_competencia(competencia, incluir_ano=False),
-            "competencia_anterior_input": competencia_anterior.strftime("%Y-%m"),
-            "competencia_proxima_input": competencia_proxima.strftime("%Y-%m"),
-            "total_abaixo_meta": total_abaixo_meta,
-            "total_pendencias": total_pendencias,
-            "total_justificadas": total_justificadas,
-            "total_equipes_afetadas": total_equipes_afetadas,
-            "total_funcionarios_afetados": total_funcionarios_afetados,
-            "categorias_series": categorias_series,
-            "ranking_funcionarios_series": ranking_funcionarios_series,
-            "radar_series": radar_series,
-            "ranking_funcionarios": ranking_funcionarios[:8],
-            "acoes_criticas": acoes_criticas[:8],
-            "ocorrencias": ocorrencias[:12],
-        }
-    )
+    atual = timezone.localdate().replace(day=1)
+    fechado = competencia < atual
+    acoes = (AcaoMelhoria.objects.filter(indicador__diagnostico__cliente=cliente)
+        .select_related("indicador", "responsavel")
+        .prefetch_related("atribuicoes", "tarefas__funcionario__user",
+            "tarefas__funcionario__equipe", "tarefas__registros",
+            "tarefas__justificativas_mensais")
+        .order_by("indicador__nome", "nome")) if cliente else AcaoMelhoria.objects.none()
+    resultados = [_resultado_acao(a, list(a.tarefas.all()), competencia) for a in acoes]
+    ocorrencias = [t for a in resultados for t in a["ocorrencias"]]
+    categorias = {}
+    for item in ocorrencias:
+        label = item["categoria"] or "Sem justificativa"
+        categorias[label] = categorias.get(label, 0) + 1
+    context.update({
+        "competencia_input": competencia.strftime("%Y-%m"),
+        "competencia_label": _formatar_competencia(competencia),
+        "competencia_nome": _formatar_competencia(competencia, incluir_ano=False),
+        "competencia_anterior_input": _competencia_anterior(competencia).strftime("%Y-%m"),
+        "competencia_proxima_input": _proxima_competencia(competencia).strftime("%Y-%m"),
+        "ultimo_mes_fechado": _competencia_anterior(atual).strftime("%Y-%m"),
+        "periodo_fechado": fechado, "periodo_futuro": competencia > atual,
+        "resultados_acoes": resultados,
+        "total_abaixo_meta": len(ocorrencias),
+        "total_pendencias": sum(t["pendente"] for t in ocorrencias),
+        "total_justificadas": sum(bool(t["categoria"]) for t in ocorrencias),
+        "total_tarefas": sum(len(p["tarefas"]) for a in resultados for p in a["profissionais"]),
+        "categorias_series": [{"label": k, "valor": v} for k, v in categorias.items()],
+        "ocorrencias": ocorrencias,
+    })
     return render(request, "monitoramento/analise_problemas.html", context)
 
 
@@ -1517,6 +1379,7 @@ def acoes_view(request):
             "tarefas__registros",
             "tarefas__funcionario__user",
             "tarefas__funcionario__equipe",
+            "tarefas__justificativas_mensais",
             "atribuicoes__funcionario__user",
             "atribuicoes__equipe",
             "atribuicoes__distribuicoes__funcionario__user",
@@ -1598,6 +1461,7 @@ def acoes_view(request):
         atribuicoes_equipes = [item for item in atribuicoes_acao if item.equipe_id]
         acoes_lista.append(
             {
+                **_resultado_acao(acao, tarefas_acao, competencia),
                 "obj": acao,
                 "id": acao.id,
                 "nome": acao.nome,
@@ -1687,6 +1551,8 @@ def acoes_view(request):
             "indicador_percentual_competencia": indicador_snapshot["percentual"],
             "acoes": acoes,
             "acoes_lista": acoes_lista,
+            "periodo_fechado": competencia < timezone.localdate().replace(day=1),
+            "periodo_futuro": competencia > timezone.localdate().replace(day=1),
             "acao_alvo_modal": acao_alvo_modal,
             "atribuicoes_acao": AcaoAtribuicao.objects.filter(acao=acao_alvo_modal).prefetch_related("distribuicoes__funcionario__user") if acao_alvo_modal else AcaoAtribuicao.objects.none(),
             "equipes_detalhe_modal": equipes_detalhe_modal,

@@ -1,5 +1,6 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import Client as HttpClient
@@ -411,7 +412,7 @@ class AtribuicaoAcaoTests(BaseMonitoramentoTestCase):
             f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&competencia=2026-04"
         )
         self.assertEqual(response_sem_equipe.status_code, 200)
-        self.assertNotContains(response_sem_equipe, "Ver equipes")
+        self.assertNotContains(response_sem_equipe, "Ver rateio por equipe")
 
         AcaoAtribuicao.objects.create(
             acao=self.acao,
@@ -425,7 +426,7 @@ class AtribuicaoAcaoTests(BaseMonitoramentoTestCase):
             f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&competencia=2026-04"
         )
         self.assertEqual(response_com_equipe.status_code, 200)
-        self.assertContains(response_com_equipe, "Ver equipes")
+        self.assertContains(response_com_equipe, "Ver rateio por equipe")
 
     def test_modal_equipes_mostra_meta_oficial_e_contribuicao_individual(self):
         outro_user = User.objects.create_user(username="bia", password="func123", first_name="Bia")
@@ -718,7 +719,8 @@ class FuncionarioAreaTests(BaseMonitoramentoTestCase):
         self.assertEqual(registro.descricao_atividade, "")
         self.assertEqual(registro.justificativa, "")
 
-    def test_lancamento_do_funcionario_atualiza_indicador_automaticamente(self):
+    @patch("django.utils.timezone.now", return_value=datetime(2026, 4, 15, 12, tzinfo=timezone.utc))
+    def test_lancamento_do_funcionario_atualiza_indicador_automaticamente(self, _localdate):
         self.client_http.post("/accounts/organizacao/", {"codigo": "maracaja"})
         self.client_http.post("/accounts/login/", {"username": "suel", "password": "func123"})
 
@@ -749,7 +751,8 @@ class FuncionarioAreaTests(BaseMonitoramentoTestCase):
             ).exists()
         )
 
-    def test_area_de_metas_mostra_realizado_apenas_da_competencia_atual(self):
+    @patch("django.utils.timezone.now", return_value=datetime(2026, 4, 15, 12, tzinfo=timezone.utc))
+    def test_area_de_metas_mostra_realizado_apenas_da_competencia_atual(self, _localdate):
         self.client_http.post("/accounts/organizacao/", {"codigo": "maracaja"})
         self.client_http.post("/accounts/login/", {"username": "suel", "password": "func123"})
 
@@ -785,7 +788,8 @@ class FuncionarioAreaTests(BaseMonitoramentoTestCase):
         tarefa_lista = next(item for item in response.context["tarefas_funcionario"] if item["id"] == tarefa.id)
         self.assertEqual(tarefa_lista["realizado_total"], Decimal("5"))
 
-    def test_resultados_mostram_pendencias_do_mes_anterior(self):
+    @patch("django.utils.timezone.now", return_value=datetime(2026, 4, 15, 12, tzinfo=timezone.utc))
+    def test_resultados_mostram_pendencias_do_mes_anterior(self, _localdate):
         self.client_http.post("/accounts/organizacao/", {"codigo": "maracaja"})
         self.client_http.post("/accounts/login/", {"username": "suel", "password": "func123"})
 
@@ -1095,3 +1099,74 @@ class DashboardTests(BaseMonitoramentoTestCase):
         self.assertEqual(response.context["total_justificadas"], 1)
         self.assertEqual(response.context["ocorrencias"][0]["categoria"], "Falta de pessoal")
         self.assertTrue(any(item["label"] == "Falta de pessoal" for item in response.context["categorias_series"]))
+
+
+class ResultadosMensaisTests(BaseMonitoramentoTestCase):
+    def setUp(self):
+        clock = patch("django.utils.timezone.now", return_value=datetime(2026, 4, 15, 12, tzinfo=timezone.utc))
+        clock.start()
+        self.addCleanup(clock.stop)
+        super().setUp()
+        self.acao.meta_mensal = Decimal("360")
+        self.acao.responsavel = self.func_user
+        self.acao.save()
+        workers = [self.funcionario]
+        for name in ["Ana", "Joao"]:
+            user = User.objects.create_user(username="resultado_"+name)
+            workers.append(Funcionario.objects.create(cliente=self.cliente_org, equipe=self.equipe, user=user))
+        self.tasks = []
+        for worker, current, previous in zip(workers, [24, 20, 16], [120, 90, 60]):
+            task = Tarefa.objects.create(acao=self.acao, funcionario=worker, titulo="Acolhimento", meta_quantidade=120)
+            self.tasks.append(task)
+            for day, amount in [(date(2026, 4, 5), current), (date(2026, 3, 20), previous)]:
+                RegistroDiario.objects.create(tarefa=task, funcionario=worker, data=day, quantidade_realizada=amount)
+        self.login_gestor()
+
+    def test_mes_aberto_separa_producao_coletiva_e_coordenador_sem_cobrar_justificativa(self):
+        response = self.client_http.get("/analises/problemas/?competencia=2026-04")
+        action = response.context["resultados_acoes"][0]
+        self.assertEqual(action["realizado_total"], Decimal("60"))
+        self.assertEqual(action["coordenador_realizado"], Decimal("24"))
+        self.assertEqual(sorted(p["realizado"] for p in action["profissionais"]), [16, 20, 24])
+        self.assertEqual(response.context["total_pendencias"], 0)
+        self.assertEqual(response.context["ocorrencias"], [])
+        self.assertContains(response, "Mês em andamento")
+        self.assertNotContains(response, "Justificativa ainda não registrada")
+
+    def test_mes_fechado_conta_somente_tarefas_abaixo_da_meta_e_suas_causas(self):
+        task = self.tasks[1]
+        JustificativaNaoAtingimentoMensal.objects.create(tarefa=task, funcionario=task.funcionario, competencia=date(2026, 3, 1), categoria="falta_pessoal", justificativa="Escala reduzida")
+        response = self.client_http.get("/analises/problemas/?competencia=2026-03")
+        self.assertEqual(response.context["total_abaixo_meta"], 2)
+        self.assertEqual(response.context["total_justificadas"], 1)
+        self.assertEqual(response.context["total_pendencias"], 1)
+        self.assertEqual(response.context["resultados_acoes"][0]["realizado_total"], Decimal("270"))
+        self.assertContains(response, "Escala reduzida")
+        self.assertContains(response, "Justificativa ainda não registrada", count=1)
+        self.assertContains(response, "Meta atingida", count=1)
+
+    def test_mes_futuro_nao_gera_ocorrencias_nem_pendencias(self):
+        response = self.client_http.get("/analises/problemas/?competencia=2026-05")
+        self.assertTrue(response.context["periodo_futuro"])
+        self.assertEqual(response.context["total_abaixo_meta"], 0)
+        self.assertEqual(response.context["total_pendencias"], 0)
+        self.assertContains(response, "Mês futuro")
+
+    def test_lista_de_acoes_usa_o_mesmo_total_e_preserva_as_atribuicoes(self):
+        response = self.client_http.get(f"/acoes/?diagnostico={self.diagnostico.id}&indicador={self.indicador.id}&competencia=2026-04")
+        action = response.context["acoes_lista"][0]
+        self.assertEqual(action["realizado_total"], 60)
+        self.assertEqual(action["coordenador_realizado"], 24)
+        self.assertContains(response, "Quem compõe esse total")
+        self.assertContains(response, "Distribuir metas")
+        self.assertContains(response, "modal=atribuir_acao")
+
+    def test_coordenador_sem_tarefas_nao_recebe_o_total_da_equipe(self):
+        self.acao.responsavel = self.gestor
+        self.acao.save()
+        response = self.client_http.get("/analises/problemas/?competencia=2026-04")
+        action = response.context["resultados_acoes"][0]
+        self.assertEqual(action["realizado_total"], 60)
+        self.assertEqual(action["coordenador_realizado"], 0)
+        self.assertFalse(action["coordenador_executa"])
+        self.assertContains(response, "Não tem produção própria registrada")
