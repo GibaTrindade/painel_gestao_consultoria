@@ -113,6 +113,8 @@
         </div>
         <form method="post" class="modal-form">
             {% csrf_token %}
+{% include "monitoramento/_form_errors.html" with form=diagnostico_form %}
+
             <div class="form-row single">{{ diagnostico_form.titulo.label_tag }} {{ diagnostico_form.titulo }}</div>
             <div class="form-row single">{{ diagnostico_form.status.label_tag }} {{ diagnostico_form.status }}</div>
             <div class="form-grid two-cols">
@@ -147,6 +149,8 @@
         </div>
         <form method="post" class="modal-form">
             {% csrf_token %}
+{% include "monitoramento/_form_errors.html" with form=diagnostico_edicao_form %}
+
             <input type="hidden" name="form_name" value="editar_diagnostico">
             <input type="hidden" name="diagnostico_id" value="{{ diagnostico_alvo_modal.id }}">
             <div class="form-row single">{{ diagnostico_edicao_form.titulo.label_tag }} {{ diagnostico_edicao_form.titulo }}</div>

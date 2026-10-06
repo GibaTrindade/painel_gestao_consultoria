@@ -18,18 +18,8 @@
             <button type="button" class="month-arrow" data-month-target="{{ competencia_proxima_input }}" aria-label="Proximo mes">&rarr;</button>
         </div>
     </form>
-    <div class="worker-result-box">
-        <small>Geral</small>
-        <strong>{{ resultado_percentual }}%</strong>
-    </div>
-    <div class="worker-result-box">
-        <small>Meta total</small>
-        <strong>{{ resultado_meta_total }}</strong>
-    </div>
-    <div class="worker-result-box">
-        <small>Realizado</small>
-        <strong>{{ resultado_realizado_total }}</strong>
-    </div>
+    <p class="worker-month-summary"><strong>{{ metas_atingidas }} de {{ tarefas_funcionario|length }} metas atingidas</strong></p>
+    <p class="table-note">{% if competencia_fechada %}Mês encerrado. Confira os resultados e as justificativas abaixo.{% else %}Mês em andamento. Os valores ainda podem aumentar.{% endif %} Cada meta é apresentada na sua própria unidade de medida.</p>
 </section>
 
 {% if pendencias_justificativa %}
@@ -84,8 +74,8 @@
         {% for tarefa in tarefas_funcionario %}
             <article class="worker-task-item">
                 <strong>{{ tarefa.titulo }}</strong>
-                <span>{{ tarefa.acao_nome }}</span>
-                <small>Meta {{ tarefa.meta_quantidade }} | Realizado {{ tarefa.realizado_total }}</small>
+                <span>{{ tarefa.unidade }}</span>
+                <small>Meta do mês: {{ tarefa.meta_quantidade|floatformat:2 }} · Realizado no mês: {{ tarefa.realizado_total|floatformat:2 }} ({{ tarefa.percentual_realizado|floatformat:0 }}%)</small>
                 {% if tarefa.abaixo_da_meta %}
                     {% if tarefa.justificativa_mensal %}
                         <small>Causa: {{ tarefa.justificativa_mensal.get_categoria_display }}</small>

@@ -8,7 +8,7 @@
 {% block content %}
 <section class="dashboard-toolbar filter-panel">
     <div>
-        <p class="overline">Competencia em analise</p>
+
         <h3>{{ competencia_label }}</h3>
         <p class="subtitle-inline">
             {% if indicador_selecionado %}
@@ -99,6 +99,8 @@
         </div>
         <form method="post" class="modal-form" id="assignment-modal-form" novalidate>
             {% csrf_token %}
+{% include "monitoramento/_form_errors.html" with form=acao_form %}
+
             <input type="hidden" name="form_name" value="nova_acao">
             <div class="form-row single">{{ acao_form.nome.label_tag }} {{ acao_form.nome }}</div>
             <div class="form-grid">
@@ -125,6 +127,8 @@
         </div>
         <form method="post" class="modal-form" id="assignment-modal-form" novalidate>
             {% csrf_token %}
+{% include "monitoramento/_form_errors.html" with form=atribuicao_form %}
+
             <input type="hidden" name="form_name" value="confirmar_atribuicoes">
             <input type="hidden" name="acao_id" value="{{ acao_alvo_modal.id }}">
             <input type="hidden" name="pending_assignments" id="pending-assignments-input" value="[]">
@@ -326,6 +330,7 @@
 {{ equipes_rateio_data|json_script:"equipes-rateio-data" }}
 <script>
     (() => {
+        const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
         const tipoInputs = document.querySelectorAll('input[name="tipo_destino"]');
         const profissionalField = document.getElementById('profissional-field');
         const equipeField = document.getElementById('equipe-field');
@@ -418,7 +423,7 @@
             }
             const suggestion = automaticDistributionSuggestion(valorMensalInput ? valorMensalInput.value : 0, members);
             automaticPreview.innerHTML = suggestion.map((item) => `
-                <span class="distribution-pill">${item.nome}: ${toBrazilianNumber(item.valor_mensal)}</span>
+                <span class="distribution-pill">${escapeHTML(item.nome)}: ${toBrazilianNumber(item.valor_mensal)}</span>
             `).join('');
         };
 
@@ -435,9 +440,9 @@
             const defaults = distributionValues || automaticDistributionSuggestion(valorMensalInput ? valorMensalInput.value : 0, members);
             const defaultsMap = Object.fromEntries(defaults.map((item) => [String(item.funcionario_id), item.valor_mensal]));
             manualGrid.innerHTML = members.map((member) => `
-                <div class="manual-distribution-row" data-manual-distribution-row data-funcionario-id="${member.id}" data-funcionario-nome="${member.nome}">
-                    <span>${member.nome}</span>
-                    <input type="number" step="1" min="0" value="${defaultsMap[String(member.id)] ?? 0}">
+                <div class="manual-distribution-row" data-manual-distribution-row data-funcionario-id="${member.id}" data-funcionario-nome="${escapeHTML(member.nome)}">
+                    <span>${escapeHTML(member.nome)}</span>
+                    <input type="number" step="1" min="0" aria-label="Meta mensal de ${escapeHTML(member.nome)}" value="${Number(defaultsMap[String(member.id)] ?? 0)}">
                 </div>
             `).join('');
             getManualDistributionRows().forEach((row) => {
@@ -518,9 +523,9 @@
             const row = document.createElement('tr');
             row.dataset.pendingIndex = index;
             row.innerHTML = `
-                <td>${item.nome_exibicao}</td>
-                <td>${item.modo_label || 'Individual'}</td>
-                <td>${item.valor_mensal}</td>
+                <td>${escapeHTML(item.nome_exibicao)}</td>
+                <td>${escapeHTML(item.modo_label || 'Individual')}</td>
+                <td>${escapeHTML(item.valor_mensal)}</td>
                 <td><span class="tag ${item.ativo ? 'success' : 'danger'}">${item.ativo ? 'Ativo' : 'Desativado'}</span></td>
                 <td><button type="button" class="ghost-chip remove-assignment-btn">Remover</button></td>
             `;

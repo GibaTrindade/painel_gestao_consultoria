@@ -1,24 +1,4 @@
 (function () {
-    const glowLinePlugin = {
-        id: "glowLinePlugin",
-        beforeDatasetDraw(chart, args) {
-            const dataset = chart.data.datasets[args.index];
-            const ctx = chart.ctx;
-            ctx.save();
-            ctx.shadowColor = dataset.borderColor;
-            ctx.shadowBlur = 18;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 0;
-        },
-        afterDatasetDraw(chart) {
-            chart.ctx.restore();
-        },
-    };
-
-    if (typeof window.Chart !== "undefined") {
-        Chart.register(glowLinePlugin);
-    }
-
     function getSeries(canvas) {
         const sourceId = canvas.dataset.sourceId;
         const node = sourceId ? document.getElementById(sourceId) : null;
@@ -75,7 +55,7 @@
             pointRadius: 4,
             pointHoverRadius: 6,
             pointBorderWidth: 2,
-            pointBackgroundColor: "#0a1022",
+            pointBackgroundColor: "#ffffff",
             pointBorderColor: definition.color,
             pointHoverBackgroundColor: definition.color,
             pointHoverBorderColor: "#ffffff",
@@ -94,7 +74,7 @@
 
         const labels = series.map((item) => item.label);
         new Chart(canvas, {
-            type: "line",
+            type: canvas.dataset.chartType || "line",
             data: {
                 labels,
                 datasets: [],
@@ -115,7 +95,7 @@
                     },
                 },
                 animation: {
-                    duration: 900,
+                    duration: 0,
                     easing: "easeOutQuart",
                 },
                 plugins: {
@@ -132,12 +112,12 @@
                         bodyColor: "#f7fbff",
                         cornerRadius: 14,
                         titleFont: {
-                            family: "IBM Plex Mono",
+                            family: "Segoe UI",
                             size: 12,
                             weight: "600",
                         },
                         bodyFont: {
-                            family: "IBM Plex Mono",
+                            family: "Segoe UI",
                             size: 11,
                         },
                         callbacks: {
@@ -150,14 +130,14 @@
                 scales: {
                     x: {
                         ticks: {
-                            color: "rgba(219, 232, 255, 0.74)",
+                            color: "#52657a",
                             font: {
-                                family: "IBM Plex Mono",
+                                family: "Segoe UI",
                                 size: 11,
                             },
                         },
                         grid: {
-                            color: "rgba(255,255,255,0.04)",
+                            color: "#e4eaf0",
                             drawBorder: false,
                         },
                         border: {
@@ -166,15 +146,15 @@
                     },
                     y: {
                         min: 0,
-                        max: 100,
+                        suggestedMax: 100,
                         ticks: {
                             stepSize: 20,
-                            color: "rgba(184, 213, 255, 0.68)",
+                            color: "#52657a",
                             callback(value) {
                                 return `${value}%`;
                             },
                             font: {
-                                family: "IBM Plex Mono",
+                                family: "Segoe UI",
                                 size: 11,
                             },
                         },
@@ -229,7 +209,7 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: {
-                    duration: 900,
+                    duration: 0,
                     easing: "easeOutQuart",
                 },
                 plugins: {
@@ -245,12 +225,12 @@
                         bodyColor: "#f7fbff",
                         cornerRadius: 14,
                         titleFont: {
-                            family: "IBM Plex Mono",
+                            family: "Segoe UI",
                             size: 12,
                             weight: "600",
                         },
                         bodyFont: {
-                            family: "IBM Plex Mono",
+                            family: "Segoe UI",
                             size: 11,
                         },
                     },
@@ -258,9 +238,9 @@
                 scales: {
                     x: {
                         ticks: {
-                            color: "rgba(219, 232, 255, 0.74)",
+                            color: "#52657a",
                             font: {
-                                family: "IBM Plex Mono",
+                                family: "Segoe UI",
                                 size: 11,
                             },
                         },
@@ -275,9 +255,9 @@
                         beginAtZero: true,
                         ticks: {
                             precision: 0,
-                            color: "rgba(184, 213, 255, 0.68)",
+                            color: "#52657a",
                             font: {
-                                family: "IBM Plex Mono",
+                                family: "Segoe UI",
                                 size: 11,
                             },
                         },
@@ -342,7 +322,7 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: {
-                    duration: 900,
+                    duration: 0,
                     easing: "easeOutQuart",
                 },
                 plugins: {
@@ -358,12 +338,12 @@
                         bodyColor: "#f7fbff",
                         cornerRadius: 14,
                         titleFont: {
-                            family: "IBM Plex Mono",
+                            family: "Segoe UI",
                             size: 12,
                             weight: "600",
                         },
                         bodyFont: {
-                            family: "IBM Plex Mono",
+                            family: "Segoe UI",
                             size: 11,
                         },
                     },
@@ -379,18 +359,18 @@
                             color: "rgba(116, 168, 255, 0.14)",
                         },
                         pointLabels: {
-                            color: "rgba(219, 232, 255, 0.74)",
+                            color: "#52657a",
                             font: {
-                                family: "IBM Plex Mono",
+                                family: "Segoe UI",
                                 size: 11,
                             },
                         },
                         ticks: {
                             stepSize: radarStep,
-                            color: "rgba(184, 213, 255, 0.68)",
+                            color: "#52657a",
                             backdropColor: "transparent",
                             font: {
-                                family: "IBM Plex Mono",
+                                family: "Segoe UI",
                                 size: 10,
                             },
                         },
@@ -460,6 +440,9 @@
     const workerModalBody = document.querySelector("[data-worker-modal-body]");
     const workerData = getJsonData("dashboard-profissionais-modal-data");
 
+    const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
+    const number = value => Number(value).toLocaleString('pt-BR', {maximumFractionDigits: 2});
+
     function closeWorkerModal() {
         if (workerModal) {
             workerModal.hidden = true;
@@ -476,12 +459,12 @@
         }
 
         workerModalTitle.textContent = `Tarefas de ${worker.nome}`;
-        workerModalSubtitle.textContent = `${worker.equipe} | ${worker.percentual_realizado.toFixed(1)}% no indicador selecionado`;
+        workerModalSubtitle.textContent = `${worker.equipe} · ${worker.competencia} · ${worker.indicador}`;
         workerModalSummary.innerHTML = `
             <span class="summary-chip">${worker.tarefas_total_count} tarefas no indicador</span>
-            <span class="summary-chip">${worker.tarefas_ativas_count} ativas</span>
-            <span class="summary-chip">${worker.tarefas_concluidas_count} concluidas</span>
-            <span class="summary-chip">Equipe: ${worker.equipe}</span>
+            <span class="summary-chip">${worker.tarefas_ativas_count} metas ainda não atingidas no mês</span>
+            <span class="summary-chip">${worker.tarefas_concluidas_count} metas atingidas no mês</span>
+            <span class="summary-chip">Equipe: ${escapeHTML(worker.equipe)}</span>
         `;
 
         if (!worker.tarefas.length) {
@@ -489,26 +472,23 @@
         } else {
             workerModalBody.innerHTML = worker.tarefas
                 .map((tarefa) => {
-                    const statusClass = {
-                        atrasada: "danger",
-                        em_andamento: "warning",
-                        pendente: "success",
-                        concluida: "info",
-                    }[tarefa.situacao_codigo] || "info";
+                    const atingida = tarefa.meta > 0 && tarefa.realizado >= tarefa.meta;
+                    const statusClass = atingida ? "success" : worker.periodo_fechado ? "warning" : "info";
+                    const status = atingida ? "Meta do mês atingida" : worker.periodo_fechado ? "Mês encerrado abaixo da meta" : "Meta do mês em andamento";
 
                     return `
                         <article class="task-card">
                             <div class="task-card-header">
                                 <div>
-                                    <strong>${tarefa.titulo}</strong>
-                                    <p>${tarefa.acao}</p>
+                                    <strong>${escapeHTML(tarefa.titulo)}</strong>
+                                    <p>${escapeHTML(tarefa.unidade)}</p>
                                 </div>
-                                <span class="tag ${statusClass}">${tarefa.situacao}</span>
+                                <span class="tag ${statusClass}">${status}</span>
                             </div>
                             <div class="task-card-metrics">
-                                <span>Meta ${tarefa.meta.toFixed(2)}</span>
-                                <span>Realizado ${tarefa.realizado.toFixed(2)}</span>
-                                <span>Prazo ${tarefa.prazo}</span>
+                                <span>Meta do mês: <strong>${number(tarefa.meta)}</strong></span>
+                                <span>Realizado em ${escapeHTML(worker.competencia)}: <strong>${number(tarefa.realizado)}</strong></span>
+                                <span>Falta para a meta: <strong>${number(Math.max(0, tarefa.meta - tarefa.realizado))}</strong></span><span>Prazo da tarefa: ${escapeHTML(tarefa.prazo)}</span>
                             </div>
                         </article>
                     `;

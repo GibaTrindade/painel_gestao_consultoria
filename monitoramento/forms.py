@@ -3,6 +3,10 @@ from datetime import date
 
 from django import forms
 from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password
+from django.db.models import Sum
+from django.utils import timezone
+from decimal import Decimal
 from django.contrib.auth.models import User
 
 from .models import (
@@ -25,7 +29,12 @@ class StyledFormMixin:
     def apply_styling(self):
         for field in self.fields.values():
             css_class = field.widget.attrs.get("class", "")
-            field.widget.attrs["class"] = f"{css_class} form-control".strip()
+            if isinstance(field.widget, (forms.CheckboxSelectMultiple, forms.RadioSelect)):
+                field.widget.attrs["class"] = "choice-options"
+            elif isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs["class"] = "choice-control"
+            else:
+                field.widget.attrs["class"] = f"{css_class} form-control".strip()
 
 
 class CodigoOrganizacaoForm(StyledFormMixin, forms.Form):
@@ -51,8 +60,8 @@ class CodigoOrganizacaoForm(StyledFormMixin, forms.Form):
 
 
 class OrganizacaoLoginForm(StyledFormMixin, forms.Form):
-    username = forms.CharField(label="Usuario")
-    password = forms.CharField(label="Senha", widget=forms.PasswordInput)
+    username = forms.CharField(label="Usuário", widget=forms.TextInput(attrs={"autocomplete": "username", "autocapitalize": "none"}))
+    password = forms.CharField(label="Senha", widget=forms.PasswordInput(attrs={"autocomplete": "current-password"}))
 
     def __init__(self, *args, cliente=None, allow_master=False, request=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -226,7 +235,7 @@ class AtribuicaoAcaoForm(StyledFormMixin, forms.Form):
         if cliente:
             self.fields["profissional"].queryset = Funcionario.objects.filter(cliente=cliente)
             self.fields["equipe_destino"].queryset = Equipe.objects.filter(cliente=cliente)
-        self.fields["profissional"].label = "Pesquisar"
+        self.fields["profissional"].label = "Profissional"
         self.fields["valor_mensal"].label = "Valor mensal"
 
     def clean(self):
@@ -277,10 +286,18 @@ class RegistroDiarioForm(StyledFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.apply_styling()
         self.tarefa = tarefa
-        self.fields["descricao_atividade"].label = "OBS"
+        self.fields["descricao_atividade"].label = "Observação (opcional)"
         self.fields["descricao_atividade"].required = False
-        self.fields["quantidade_realizada"].label = "Informe o valor alcancado"
+        self.fields["quantidade_realizada"].label = "Quantidade realizada neste lançamento"
+        self.fields["quantidade_realizada"].min_value = Decimal("0")
+        self.fields["quantidade_realizada"].widget.attrs["min"] = "0"
         self.fields["descricao_atividade"].help_text = "Campo opcional para observacoes livres sobre o lancamento."
+
+    def clean_quantidade_realizada(self):
+        valor = self.cleaned_data["quantidade_realizada"]
+        if valor <= 0:
+            raise forms.ValidationError("Informe uma quantidade maior que zero.")
+        return valor
 
     def save(self, commit=True, funcionario=None, tarefa=None):
         instance = super().save(commit=False)
@@ -290,7 +307,9 @@ class RegistroDiarioForm(StyledFormMixin, forms.ModelForm):
         instance.descricao_atividade = (instance.descricao_atividade or "").strip()
         instance.justificativa = ""
         instance.quantidade_prevista = tarefa_obj.meta_quantidade if tarefa_obj else 0
-        realizado = instance.quantidade_realizada or 0
+        inicio_mes = timezone.localdate().replace(day=1)
+        anteriores = tarefa_obj.registros.filter(data__gte=inicio_mes, data__lte=timezone.localdate()).exclude(pk=instance.pk).aggregate(total=Sum("quantidade_realizada"))["total"] or Decimal("0")
+        realizado = anteriores + (instance.quantidade_realizada or 0)
         meta = tarefa_obj.meta_quantidade if tarefa_obj else 0
 
         if realizado >= meta and meta > 0:
@@ -313,7 +332,8 @@ class RegistroDiarioForm(StyledFormMixin, forms.ModelForm):
 
 class ProfissionalForm(StyledFormMixin, forms.Form):
     nome = forms.CharField(max_length=150)
-    username = forms.CharField(max_length=150)
+    username = forms.CharField(max_length=150, validators=User._meta.get_field("username").validators)
+    senha_inicial = forms.CharField(label="Senha inicial", widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}), help_text="Use uma senha exclusiva com pelo menos 8 caracteres.")
     cargo = forms.CharField(max_length=120, required=False)
     telefone = forms.CharField(max_length=30, required=False)
     email = forms.EmailField(required=False)
@@ -321,11 +341,11 @@ class ProfissionalForm(StyledFormMixin, forms.Form):
         choices=[
             ("Domingo", "Domingo"),
             ("Segunda", "Segunda"),
-            ("Terca", "Terca"),
+            ("Terca", "Terça"),
             ("Quarta", "Quarta"),
             ("Quinta", "Quinta"),
             ("Sexta", "Sexta"),
-            ("Sabado", "Sabado"),
+            ("Sabado", "Sábado"),
         ],
         widget=forms.CheckboxSelectMultiple,
         required=False,
@@ -337,6 +357,19 @@ class ProfissionalForm(StyledFormMixin, forms.Form):
         self.apply_styling()
         self.fields["nome"].label = "Nome"
         self.fields["username"].label = "Usuario"
+
+    def clean_username(self):
+        username = self.cleaned_data["username"].strip()
+        if User.objects.filter(username=username).exists():
+            raise forms.ValidationError("Este usuário já existe. Escolha outro nome de usuário para o novo profissional.")
+        return username
+
+    def clean_senha_inicial(self):
+        senha = self.cleaned_data["senha_inicial"]
+        if len(senha) < 8:
+            raise forms.ValidationError("A senha deve ter pelo menos 8 caracteres.")
+        validate_password(senha)
+        return senha
 
     def save(self, cliente, equipe):
         nome = self.cleaned_data["nome"].strip()
@@ -350,7 +383,7 @@ class ProfissionalForm(StyledFormMixin, forms.Form):
             },
         )
         if created:
-            user.set_password("func123")
+            user.set_password(self.cleaned_data["senha_inicial"])
         user.first_name = first_name
         user.last_name = last_name
         user.email = self.cleaned_data["email"]

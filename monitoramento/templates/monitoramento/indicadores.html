@@ -30,15 +30,15 @@
             <a class="primary-btn" href="?{% if perfil_tipo == 'admin' and cliente_atual %}cliente={{ cliente_atual.id }}&{% endif %}{% if diagnostico_selecionado %}diagnostico={{ diagnostico_selecionado.id }}&{% endif %}modal=novo_indicador"><i class="bi bi-plus-circle"></i> Novo Indicador</a>
         </div>
     </div>
-    <p class="table-note">O status e o valor atual do indicador sao atualizados automaticamente com base nos lancamentos das tarefas vinculadas as acoes. O codigo do indicador e gerado pelo sistema, e o valor atual nao pode ser editado manualmente.</p>
+    <p class="table-note">Valores de {{ competencia_label }}. A produção é calculada pelos lançamentos das tarefas vinculadas. Para consultar meses anteriores, acesse o Dashboard.</p>
     <table>
         <thead>
             <tr>
                 <th>Codigo</th>
                 <th>Indicador</th>
-                <th>Meta</th>
-                <th>Atual</th>
-                <th>Status</th>
+                <th>Meta do mês</th>
+                <th>Realizado no mês</th>
+                <th>Progresso do mês</th>
                 <th>Atalhos</th>
             </tr>
         </thead>
@@ -47,12 +47,10 @@
                 <tr>
                     <td>{{ indicador.codigo|default:"-" }}</td>
                     <td>{{ indicador.nome }}</td>
-                    <td>{{ indicador.meta_valor }}</td>
-                    <td>{{ indicador.valor_atual }}</td>
+                    <td>{{ indicador.resultado_mes.meta|floatformat:2 }}</td>
+                    <td>{{ indicador.resultado_mes.valor|floatformat:2 }}</td>
                     <td>
-                        <span class="tag {% if indicador.valor_atual >= indicador.meta_valor %}success{% elif indicador.valor_atual > 0 %}warning{% else %}danger{% endif %}">
-                            {{ indicador.status_resumo }}
-                        </span>
+                        <span class="tag {% if indicador.resultado_mes.percentual >= 100 %}success{% else %}info{% endif %}">{{ indicador.resultado_mes.percentual|floatformat:0 }}% da meta</span>
                     </td>
                     <td>
                         <div class="inline-action-group">
@@ -77,6 +75,8 @@
         </div>
         <form method="post" class="modal-form">
             {% csrf_token %}
+{% include "monitoramento/_form_errors.html" with form=indicador_form %}
+
             <input type="hidden" name="form_name" value="novo_indicador">
             {% if indicador_form.non_field_errors %}
                 <div class="form-errors">{{ indicador_form.non_field_errors }}</div>
@@ -114,6 +114,8 @@
         </div>
         <form method="post" class="modal-form">
             {% csrf_token %}
+{% include "monitoramento/_form_errors.html" with form=indicador_edicao_form %}
+
             <input type="hidden" name="form_name" value="editar_indicador">
             <input type="hidden" name="indicador_id" value="{{ indicador_alvo_modal.id }}">
             {% if indicador_edicao_form.non_field_errors %}
@@ -160,7 +162,7 @@
                     <tr>
                         <th>Acao</th>
                         <th>Meta mensal</th>
-                        <th>Status</th>
+                        <th>Progresso do mês</th>
                         <th>Responsavel</th>
                     </tr>
                 </thead>

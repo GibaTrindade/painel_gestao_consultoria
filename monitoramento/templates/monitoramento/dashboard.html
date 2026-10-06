@@ -9,7 +9,7 @@
 {% block content %}
 <section class="dashboard-toolbar filter-panel">
     <div>
-        <p class="overline">Competencia em analise</p>
+
         <h3>{{ competencia_label }}</h3>
         <p class="subtitle-inline">
             {% if indicador_selecionado %}
@@ -38,6 +38,7 @@
     </form>
 </section>
 
+<p class="period-explanation">{% if periodo_fechado %}Mês encerrado. Resultados consolidados dos lançamentos registrados.{% else %}Mês em andamento ou futuro. O progresso abaixo de 100% não significa atraso; confira os prazos nas tarefas.{% endif %}</p>
 <section class="indicator-strip dashboard-indicators">
     {% for indicador in indicadores_cards %}
         <a
@@ -58,24 +59,13 @@
         <article class="chart-card neon-chart-card gauge-card">
             <div class="panel-header">
                 <h3>{{ gauge.titulo }}</h3>
-                <span>{{ gauge.percentual|floatformat:0 }}%</span>
+
             </div>
             <p class="chart-intro">{{ gauge.subtitulo }}</p>
-            <div class="gauge-shell">
-                <div
-                    class="gauge-canvas"
-                    data-gauge-chart
-                    data-percent="{{ gauge.percentual|unlocalize }}"
-                    data-color="{{ gauge.cor }}"
-                    data-title="{{ gauge.titulo }}"
-                ></div>
-                <div class="gauge-center">
-                    <strong>{{ gauge.percentual|floatformat:0 }}%</strong>
-                    <span>na competencia</span>
-                </div>
-            </div>
+            <p class="dashboard-progress"><strong>{{ gauge.percentual|floatformat:0 }}%</strong> da meta do mês</p>
+            <progress class="monthly-progress" max="100" value="{{ gauge.percentual|unlocalize }}" aria-label="{{ gauge.titulo }}: {{ gauge.percentual|floatformat:0 }}% da meta"></progress>
             <div class="gauge-meta">
-                <span><i class="legend-swatch {% if gauge.id == 'acoes' %}neon-green{% else %}neon-pink{% endif %}"></i>Atual {{ gauge.valor_label }}</span>
+                <span><i class="legend-swatch {% if gauge.id == 'acoes' %}neon-green{% else %}neon-pink{% endif %}"></i>Realizado no mês: {{ gauge.valor_label }}</span>
                 <span>Meta {{ gauge.meta_label }}</span>
             </div>
         </article>
@@ -85,7 +75,7 @@
 <section class="panel-grid dashboard-panels">
     <article class="panel">
         <div class="panel-header">
-            <h3>Acoes Ativas do Indicador</h3>
+            <h3>Ações do indicador</h3>
             <span>{{ acoes_lista|length }} registros</span>
         </div>
         <table>
@@ -93,7 +83,7 @@
                 <tr>
                     <th>Descricao</th>
                     <th>Meta mensal</th>
-                    <th>Realizado</th>
+                    <th>Realizado no mês</th><th>Progresso</th>
                 </tr>
             </thead>
             <tbody>
@@ -101,12 +91,13 @@
                     <tr>
                         <td>{{ acao.nome }}</td>
                         <td>{{ acao.meta_mensal|floatformat:2 }}</td>
-                        <td class="{% if acao.percentual_realizado < 50 %}text-danger{% elif acao.percentual_realizado < 100 %}text-warning{% else %}text-success{% endif %}">
+                        <td>{{ acao.realizado_total|floatformat:2 }}</td>
+                        <td class="{% if acao.percentual_realizado >= 100 %}text-success{% elif periodo_fechado %}text-warning{% else %}text-progress{% endif %}">
                             {{ acao.percentual_realizado|floatformat:0 }}%
                         </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="3">Nenhuma acao vinculada ao indicador selecionado.</td></tr>
+                    <tr><td colspan="4">Nenhuma acao vinculada ao indicador selecionado.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -117,12 +108,12 @@
             <h3>Profissionais no Indicador Selecionado</h3>
             <span>{{ profissionais_lista|length }} profissionais</span>
         </div>
-        <p class="table-note">O percentual considera apenas as tarefas ligadas ao indicador atualmente selecionado no topo do dashboard.</p>
+        <p class="table-note">Produção individual em {{ competencia_label }}, apenas para o indicador selecionado. “Ver tarefas” detalha a meta e a produção de cada tarefa.</p>
         <table>
             <thead>
                 <tr>
-                    <th>Nome</th>
-                    <th>Realizado</th>
+                    <th>Profissional</th><th>Meta do mês</th>
+                    <th>Realizado no mês</th><th>Progresso</th>
                     <th></th>
                 </tr>
             </thead>
@@ -130,7 +121,8 @@
                 {% for item in profissionais_lista %}
                     <tr class="{% if item.selecionado %}row-selected{% endif %}">
                         <td>{{ item.funcionario.user.get_full_name|default:item.funcionario.user.username }}</td>
-                        <td class="{% if item.percentual_realizado < 50 %}text-danger{% elif item.percentual_realizado < 100 %}text-warning{% else %}text-success{% endif %}">
+                        <td>{{ item.meta_total|floatformat:2 }}</td><td>{{ item.realizado_total|floatformat:2 }}</td>
+                        <td class="{% if item.percentual_realizado >= 100 %}text-success{% elif periodo_fechado %}text-warning{% else %}text-progress{% endif %}">
                             {{ item.percentual_realizado|floatformat:0 }}%
                         </td>
                         <td class="table-action-cell">
@@ -140,12 +132,12 @@
                                 data-open-worker-modal
                                 data-funcionario-id="{{ item.funcionario.id }}"
                             >
-                                Tarefas
+                                Ver tarefas
                             </button>
                         </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="3">Nenhum profissional com tarefas nesse indicador.</td></tr>
+                    <tr><td colspan="5">Nenhum profissional com tarefas nesse indicador.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -155,17 +147,17 @@
 <section class="dashboard-chart-grid">
     <article class="chart-card neon-chart-card">
         <div class="panel-header">
-            <h3>Curva Mensal de Acoes x Indicador</h3>
+            <h3>Evolução nos últimos seis meses</h3>
             <span>{{ competencia_label }}</span>
         </div>
-        <p class="chart-intro">Passe o mouse pelos pontos para comparar a resposta operacional com a performance do indicador.</p>
+        <p class="chart-intro">Percentual da meta atingido em cada mês. O mês atual ainda está em andamento.</p>
         <div class="line-chart-shell">
             <canvas
                 class="line-chart-canvas"
                 data-line-chart
                 data-chart-title="Acoes x Indicador"
                 data-source-id="dashboard-comparativo-data"
-                data-lines='[{"key":"acoes","label":"Acoes","color":"#7CFFB2"},{"key":"indicador","label":"Indicador","color":"#FF4FD8"}]'
+                data-lines='[{"key":"acoes","label":"Acoes","color":"#267545"},{"key":"indicador","label":"Indicador","color":"#2454bc"}]'
             ></canvas>
         </div>
         <div class="mini-chart-legend neon-legend">
@@ -176,17 +168,17 @@
 
     <article class="chart-card neon-chart-card">
         <div class="panel-header">
-            <h3>Ritmo dos Profissionais</h3>
+            <h3>Progresso por profissional</h3>
             <span>{{ profissionais_lista|length }} profissionais mapeados</span>
         </div>
-        <p class="chart-intro">Leitura de entrega das pessoas mais expostas ao indicador selecionado.</p>
+        <p class="chart-intro">Comparação das metas individuais no indicador selecionado, neste mês.</p>
         <div class="line-chart-shell">
             <canvas
                 class="line-chart-canvas"
                 data-line-chart
-                data-chart-title="Profissionais"
+                data-chart-title="Profissionais" data-chart-type="bar"
                 data-source-id="dashboard-profissionais-data"
-                data-lines='[{"key":"realizado","label":"Realizado","color":"#39D5FF"},{"key":"meta","label":"Meta de referencia","color":"#B6FF3B"}]'
+                data-lines='[{"key":"realizado","label":"Realizado","color":"#2454bc"},{"key":"meta","label":"Meta de referencia","color":"#648076"}]'
             ></canvas>
         </div>
         <div class="mini-chart-legend neon-legend">
@@ -220,5 +212,5 @@
 {{ profissionais_modal_data|json_script:"dashboard-profissionais-modal-data" }}
 {{ gauges_data|json_script:"dashboard-gauges-data" }}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script src="{% static 'js/dashboard.js' %}"></script>
+<script src="{% static 'js/dashboard.js' %}?v=20261006-review"></script>
 {% endblock %}

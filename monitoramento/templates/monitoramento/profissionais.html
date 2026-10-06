@@ -11,7 +11,7 @@
         {% if perfil_tipo == 'admin' and cliente_atual %}
             <input type="hidden" name="cliente" value="{{ cliente_atual.id }}">
         {% endif %}
-        <input type="text" name="q" value="{{ termo_busca }}" placeholder="Pesquisar profissional">
+        <input type="text" aria-label="Pesquisar profissional" name="q" value="{{ termo_busca }}" placeholder="Pesquisar profissional">
         <button type="submit" class="ghost-btn">Buscar</button>
     </form>
 </section>
@@ -27,7 +27,7 @@
                 <th>Nome</th>
                 <th>Equipe</th>
                 <th>Dias</th>
-                <th>Producoes</th>
+                <th>Lançamentos no histórico</th>
             </tr>
         </thead>
         <tbody>
@@ -36,7 +36,7 @@
                     <td>{{ profissional.user.get_full_name|default:profissional.user.username }}</td>
                     <td>{{ profissional.equipe.nome|default:"Sem equipe" }}</td>
                     <td>{{ profissional.dias_trabalho|default:"-" }}</td>
-                    <td>{{ profissional.registros.count }}</td>
+                    <td>{{ profissional.total_lancamentos }}</td>
                 </tr>
             {% empty %}
                 <tr><td colspan="4">Nenhum profissional encontrado.</td></tr>

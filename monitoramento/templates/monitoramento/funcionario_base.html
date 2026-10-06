@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}App - Metas{% endblock %}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20261006-review">
 </head>
 <body class="worker-body">
     <main class="worker-shell">
@@ -14,7 +14,7 @@
             <div class="worker-navbar">
                 <div class="worker-brand-row">
                     <div class="worker-mini-logo">SMR</div>
-                    <span>App - Metas</span>
+                    <span>Minhas metas</span>
                 </div>
                 <div class="worker-userbar">
                     <span class="worker-user-name">{{ request.user.get_full_name|default:request.user.username }}</span>
@@ -32,6 +32,7 @@
                     </form>
                 </div>
             </div>
+            <p class="worker-organization">{{ cliente_atual.nome }}{% if funcionario_atual.equipe %} · {{ funcionario_atual.equipe.nome }}{% endif %}</p>
             <div class="worker-topline">
                 <h1>{% block worker_title %}Hoje{% endblock %}</h1>
                 <p>{% block worker_subtitle %}Acompanhe suas metas e lancamentos diarios{% endblock %}</p>
@@ -56,5 +57,7 @@
             <a href="{% url 'funcionario-alertas' %}" class="{% if pagina == 'funcionario-alertas' %}active{% endif %}"><i class="bi bi-bell"></i> Alertas</a>
         </nav>
     </main>
+<script src="{% static 'js/ui.js' %}?v=20261006-review"></script>
+{% block extra_scripts %}{% endblock %}
 </body>
 </html>

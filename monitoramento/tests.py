@@ -1170,3 +1170,77 @@ class ResultadosMensaisTests(BaseMonitoramentoTestCase):
         self.assertEqual(action["coordenador_realizado"], 0)
         self.assertFalse(action["coordenador_executa"])
         self.assertContains(response, "Não tem produção própria registrada")
+
+    def test_modal_dashboard_respeita_mes_e_nao_soma_historico(self):
+        atual = self.client_http.get("/?competencia=2026-04")
+        worker = next(item for item in atual.context["profissionais_modal_data"] if item["id"] == self.funcionario.id)
+        self.assertEqual(worker["tarefas"][0]["realizado"], 24)
+        self.assertEqual(worker["tarefas_ativas_count"], 1)
+        anterior = self.client_http.get("/?competencia=2026-03")
+        worker = next(item for item in anterior.context["profissionais_modal_data"] if item["id"] == self.funcionario.id)
+        self.assertEqual(worker["tarefas"][0]["realizado"], 120)
+        self.assertEqual(worker["tarefas_concluidas_count"], 1)
+
+    def test_evolucao_dashboard_preserva_dados_dos_meses_anteriores(self):
+        response = self.client_http.get("/?competencia=2026-04")
+        self.assertEqual(response.context["comparativo_series"][-2]["acoes"], 75)
+
+    def test_alertas_usam_realizado_do_mes_e_nao_historico(self):
+        self.client_http.force_login(self.func_user)
+        response = self.client_http.get("/app/alertas/")
+        self.assertEqual(response.context["alertas_tarefas"][0]["realizado"], 24)
+        self.assertContains(response, "Meta em andamento")
+
+    def test_producao_acumulada_no_mes_atualiza_meta_atingida(self):
+        from .forms import RegistroDiarioForm
+        form = RegistroDiarioForm({"quantidade_realizada": "96"}, tarefa=self.tasks[0])
+        self.assertTrue(form.is_valid(), form.errors)
+        form.save(funcionario=self.funcionario)
+        self.tasks[0].refresh_from_db()
+        self.assertTrue(self.tasks[0].concluida)
+
+    def test_producao_negativa_e_rejeitada_sem_criar_lancamento(self):
+        self.client_http.force_login(self.func_user)
+        antes = RegistroDiario.objects.count()
+        response = self.client_http.post("/app/metas/", {"tarefa_id": self.tasks[0].id, "quantidade_realizada": "-5"})
+        self.assertContains(response, "Informe uma quantidade maior que zero")
+        self.assertEqual(RegistroDiario.objects.count(), antes)
+
+    def test_funcionario_nao_acessa_ou_modifica_telas_de_gestao(self):
+        self.client_http.force_login(self.func_user)
+        for route in ["diagnosticos", "indicadores", "acoes", "equipes", "profissionais"]:
+            with self.subTest(route=route):
+                self.assertRedirects(self.client_http.get(f"/{route}/"), "/app/metas/")
+                self.assertRedirects(self.client_http.post(f"/{route}/", {"nome": "Indevido"}), "/app/metas/")
+
+    def test_usuario_existente_nao_e_sobrescrito_por_cadastro_profissional(self):
+        from .forms import ProfissionalForm
+        form = ProfissionalForm({"nome": "Outro nome", "username": self.gestor.username, "senha_inicial": "InicialExclusiva!2026"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("username", form.errors)
+        self.gestor.refresh_from_db()
+        self.assertTrue(self.gestor.check_password("gestor123"))
+
+    def test_novo_profissional_recebe_senha_definida_no_formulario(self):
+        from .forms import ProfissionalForm
+        form = ProfissionalForm({"nome": "Nova Profissional", "username": "nova_profissional", "senha_inicial": "InicialExclusiva!2026", "ativo": "on"})
+        self.assertTrue(form.is_valid(), form.errors)
+        worker = form.save(cliente=self.cliente_org, equipe=self.equipe)
+        self.assertTrue(worker.user.check_password("InicialExclusiva!2026"))
+        self.assertFalse(worker.user.check_password("func123"))
+
+    def test_indicadores_calculam_valor_do_mes_sem_depender_de_cache(self):
+        self.indicador.valor_atual = 999
+        self.indicador.save()
+        response = self.client_http.get("/indicadores/")
+        self.assertEqual(response.context["indicadores"][0].resultado_mes["valor"], 60)
+
+    def test_indicador_invalido_preserva_formulario_e_mostra_erros(self):
+        response = self.client_http.post("/indicadores/", {"form_name": "editar_indicador", "indicador_id": self.indicador.id, "nome": ""})
+        self.assertEqual(response.context["modal"], "editar_indicador")
+        self.assertTrue(response.context["indicador_edicao_form"].is_bound)
+        self.assertContains(response, "Confira os campos para continuar")
+
+    def test_alternancia_de_perfil_nao_redireciona_para_site_externo(self):
+        response = self.client_http.post("/alternar-modo/", {"modo": "gestor", "next": "https://outro.example/"})
+        self.assertEqual(response.url, "/")

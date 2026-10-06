@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Entrar | Monitoramento de Metas</title>
-    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20261006-review">
 </head>
 <body class="login-page">
     <section class="login-card">
@@ -13,7 +13,7 @@
             <div class="brand-mark">SMR</div>
             <div>
                 <h1>Monitoramento de Metas</h1>
-                <p>Painel para consultoria, clientes e profissionais</p>
+                <p>Gestão de metas, equipes e resultados</p>
             </div>
         </div>
 
@@ -31,15 +31,13 @@
                     <strong>Organizacao nao selecionada</strong>
                 {% endif %}
             </div>
-            {% if form.errors %}
-                <div class="alert">Nao foi possivel autenticar nesse contexto.</div>
-            {% endif %}
+            {% include "monitoramento/_form_errors.html" %}
             {{ form.username.label_tag }}
             {{ form.username }}
             {{ form.password.label_tag }}
             {{ form.password }}
             <button type="submit" class="primary-btn full-width">Entrar</button>
-            <a href="{% url 'select-organization' %}" class="ghost-btn full-width center-text">Trocar organizacao</a>
+            <a href="{% url 'select-organization' %}" class="ghost-btn full-width center-text">Trocar organização</a>
         </form>
     </section>
 </body>

@@ -2,6 +2,8 @@ import json
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
 from urllib.parse import urlencode
+from functools import wraps
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from django.contrib import messages
 from django.contrib.auth import login, logout
@@ -645,6 +647,8 @@ def alternar_modo_view(request):
 
     request.session["profile_mode_overrides"] = overrides
     next_url = request.POST.get("next") or reverse("dashboard")
+    if not url_has_allowed_host_and_scheme(next_url, {request.get_host()}, require_https=request.is_secure()):
+        next_url = reverse("dashboard")
     return redirect(next_url)
 
 
@@ -675,7 +679,7 @@ def dashboard_view(request):
         indicador_selecionado = next((item for item in indicadores_lista if str(item.id) == str(indicador_id)), None) or indicadores_lista[0]
 
     acoes = (
-        AcaoMelhoria.objects.filter(indicador=indicador_selecionado).prefetch_related("tarefas__registros")
+        AcaoMelhoria.objects.filter(indicador=indicador_selecionado).prefetch_related("tarefas__registros", "tarefas__funcionario__user", "tarefas__funcionario__equipe", "tarefas__acao__indicador")
         if indicador_selecionado
         else AcaoMelhoria.objects.none()
     )
@@ -760,7 +764,7 @@ def dashboard_view(request):
             )
             metricas["realizado_total"] += realizado_tarefa
             metricas["tarefas_contexto"].append(tarefa)
-            if not tarefa.concluida and tarefa.situacao != Tarefa.Situacao.CONCLUIDA:
+            if realizado_tarefa < tarefa.meta_quantidade:
                 metricas["tarefas_ativas"].append(tarefa)
 
     profissionais_lista = []
@@ -781,7 +785,7 @@ def dashboard_view(request):
             "tarefas_contexto": metrica["tarefas_contexto"],
             "tarefas_ativas_count": len(metrica["tarefas_ativas"]),
             "tarefas_total_count": len(metrica["tarefas_contexto"]),
-            "tarefas_concluidas_count": sum(1 for tarefa in metrica["tarefas_contexto"] if tarefa.concluida or tarefa.situacao == Tarefa.Situacao.CONCLUIDA),
+            "tarefas_concluidas_count": len(metrica["tarefas_contexto"]) - len(metrica["tarefas_ativas"]),
             "selecionado": str(metrica["funcionario"].id) == str(funcionario_id),
         }
         if item["selecionado"]:
@@ -793,9 +797,12 @@ def dashboard_view(request):
                 "nome": metrica["funcionario"].user.get_full_name() or metrica["funcionario"].user.username,
                 "equipe": metrica["funcionario"].equipe.nome if metrica["funcionario"].equipe else "Sem equipe",
                 "percentual_realizado": round(float(percentual_realizado), 1),
+                "competencia": _formatar_competencia(competencia),
+                "indicador": indicador_selecionado.nome,
+                "periodo_fechado": competencia < timezone.localdate().replace(day=1),
                 "tarefas_ativas_count": len(metrica["tarefas_ativas"]),
                 "tarefas_total_count": len(metrica["tarefas_contexto"]),
-                "tarefas_concluidas_count": sum(1 for tarefa in metrica["tarefas_contexto"] if tarefa.concluida or tarefa.situacao == Tarefa.Situacao.CONCLUIDA),
+                "tarefas_concluidas_count": len(metrica["tarefas_contexto"]) - len(metrica["tarefas_ativas"]),
                 "tarefas": [
                     {
                         "titulo": tarefa.titulo,
@@ -803,7 +810,8 @@ def dashboard_view(request):
                         "situacao": tarefa.get_situacao_display(),
                         "situacao_codigo": tarefa.situacao,
                         "meta": float(tarefa.meta_quantidade or 0),
-                        "realizado": float(tarefa.realizado_total or 0),
+                        "realizado": float(_resumo_tarefa_competencia(tarefa, competencia)["realizado_total"]),
+                        "unidade": tarefa.acao.indicador.unidade,
                         "prazo": tarefa.prazo.strftime("%d/%m/%Y") if tarefa.prazo else "Nao definido",
                     }
                     for tarefa in metrica["tarefas_contexto"]
@@ -837,7 +845,7 @@ def dashboard_view(request):
             if indicador_selecionado
             else {"percentual": Decimal("0")}
         )
-        registros_mes = registros_cliente.filter(
+        registros_mes = RegistroDiario.objects.filter(funcionario__cliente=cliente,
             tarefa__acao__indicador=indicador_selecionado,
             data__gte=competencia_item,
             data__lt=proxima_item,
@@ -851,8 +859,8 @@ def dashboard_view(request):
                 "rotulo": competencia_item.strftime("%b/%y"),
                 "indicador_percentual": snapshot_mes["percentual"],
                 "acoes_percentual": _percentual(realizado_mes, meta_acoes_mes),
-                "indicador_bar": min(float(snapshot_mes["percentual"]), 100.0),
-                "acoes_bar": min(float(_percentual(realizado_mes, meta_acoes_mes)), 100.0),
+                "indicador_bar": float(snapshot_mes["percentual"]),
+                "acoes_bar": float(_percentual(realizado_mes, meta_acoes_mes)),
             }
         )
 
@@ -875,7 +883,7 @@ def dashboard_view(request):
             "realizado": round(float(item["percentual_realizado"]), 1),
             "meta": 100.0,
         }
-        for item in profissionais_lista[:6]
+        for item in profissionais_lista
     ]
     context.update(
         {
@@ -914,21 +922,21 @@ def dashboard_view(request):
             "gauges_data": [
                 {
                     "id": "acoes",
-                    "titulo": "Performance das Acoes",
+                    "titulo": "Produção das ações",
                     "subtitulo": "Consolidado mensal das acoes vinculadas ao indicador selecionado",
                     "percentual": round(float(acao_media), 1),
                     "valor_label": f"{total_realizado_acoes:.2f}",
                     "meta_label": f"{total_meta_acoes:.2f}",
-                    "cor": "#7CFFB2",
+                    "cor": "#267545",
                 },
                 {
                     "id": "indicador",
-                    "titulo": "Performance do Indicador",
+                    "titulo": "Resultado do indicador",
                     "subtitulo": "Valor real medido frente a meta da competencia selecionada",
                     "percentual": round(float(indicador_snapshot["percentual"]), 1),
                     "valor_label": f"{indicador_snapshot['valor']:.2f}",
                     "meta_label": f"{indicador_snapshot['meta']:.2f}",
-                    "cor": "#FF4FD8",
+                    "cor": "#2454bc",
                 },
             ],
         }
@@ -1076,13 +1084,14 @@ def funcionario_metas_view(request):
                 "id": tarefa.id,
                 "titulo": tarefa.titulo,
                 "acao_nome": tarefa.acao.nome,
+                "unidade": tarefa.acao.indicador.unidade,
                 "meta_quantidade": resumo["meta"],
                 "realizado_total": resumo["realizado_total"],
                 "percentual_realizado": resumo["percentual"],
             }
         )
 
-    tarefa_alvo = next((item for item in tarefas_competencia if str(item["id"]) == str(request.GET.get("tarefa"))), None) or (
+    tarefa_alvo = next((item for item in tarefas_competencia if str(item["id"]) == str(request.POST.get("tarefa_id") or request.GET.get("tarefa"))), None) or (
         tarefas_competencia[0] if tarefas_competencia else None
     )
     tarefa_alvo_obj = tarefa_alvo["obj"] if tarefa_alvo else None
@@ -1150,8 +1159,8 @@ def funcionario_resultados_view(request):
             messages.error(request, "A justificativa mensal so pode ser registrada para competencias ja fechadas.")
         elif not resumo_tarefa["abaixo_da_meta"]:
             messages.error(request, "Essa tarefa nao ficou abaixo da meta na competencia informada.")
-        elif not categoria:
-            messages.error(request, "Selecione a categoria do gargalo para continuar.")
+        elif categoria not in dict(JustificativaNaoAtingimentoMensal.CategoriaGargalo.choices):
+            messages.error(request, "Selecione uma categoria válida para continuar.")
         elif categoria == JustificativaNaoAtingimentoMensal.CategoriaGargalo.OUTRO and not detalhe_outro:
             messages.error(request, "Ao selecionar 'Outro', descreva o motivo no campo complementar.")
         else:
@@ -1202,6 +1211,7 @@ def funcionario_resultados_view(request):
             "obj": tarefa,
             "titulo": tarefa.titulo,
             "acao_nome": tarefa.acao.nome,
+            "unidade": tarefa.acao.indicador.unidade,
             "meta_quantidade": resumo["meta"],
             "realizado_total": resumo["realizado_total"],
             "percentual_realizado": resumo["percentual"],
@@ -1227,6 +1237,7 @@ def funcionario_resultados_view(request):
             "tarefas_funcionario": tarefas_competencia,
             "pendencias_justificativa": pendencias_justificativa,
             "resultado_percentual": percentual,
+            "metas_atingidas": sum(1 for item in tarefas_competencia if not item["abaixo_da_meta"]),
             "resultado_meta_total": total_meta,
             "resultado_realizado_total": total_realizado,
             "categorias_gargalo": JustificativaNaoAtingimentoMensal.CategoriaGargalo.choices,
@@ -1244,19 +1255,32 @@ def funcionario_alertas_view(request):
         return redirect("dashboard")
 
     hoje = timezone.localdate()
-    tarefas = Tarefa.objects.filter(funcionario=funcionario).select_related("acao__indicador")
+    competencia = hoje.replace(day=1)
+    tarefas = Tarefa.objects.filter(funcionario=funcionario).select_related("acao__indicador").prefetch_related("registros")
     alertas = []
     for tarefa in tarefas:
-        if tarefa.prazo and tarefa.prazo < hoje and not tarefa.concluida:
-            alertas.append(("atrasada", tarefa))
-        elif tarefa.percentual_realizado < 100:
-            alertas.append(("pendente", tarefa))
-
-    context.update({"alertas_tarefas": alertas[:10], "hoje": hoje})
+        resumo = _resumo_tarefa_competencia(tarefa, competencia)
+        if resumo["abaixo_da_meta"]:
+            alertas.append({
+                "obj": tarefa, "titulo": tarefa.titulo, "meta": resumo["meta"],
+                "realizado": resumo["realizado_total"], "unidade": tarefa.acao.indicador.unidade,
+                "atrasada": bool(tarefa.prazo and tarefa.prazo < hoje),
+            })
+    context.update({"alertas_tarefas": alertas, "hoje": hoje, "competencia_label": _formatar_competencia(competencia)})
     return render(request, "monitoramento/funcionario_alertas.html", context)
 
 
+def gestor_required(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if _base_context(request, "")["perfil_tipo"] == "funcionario":
+            return redirect("funcionario-metas")
+        return view(request, *args, **kwargs)
+    return wrapped
+
+
 @login_required
+@gestor_required
 def diagnosticos_view(request):
     context = _base_context(request, "diagnosticos")
     cliente = context["cliente_atual"]
@@ -1289,10 +1313,13 @@ def diagnosticos_view(request):
     context["diagnosticos_execucao"] = diagnosticos.filter(status=Diagnostico.Status.EXECUCAO)
     context["diagnosticos_iniciar"] = diagnosticos.filter(status=Diagnostico.Status.INICIAR)
     context["diagnosticos_outros"] = diagnosticos.exclude(status__in=[Diagnostico.Status.EXECUCAO, Diagnostico.Status.INICIAR])
+    if request.method == "POST":
+        context["modal"] = request.POST.get("form_name", "novo_diagnostico")
     return render(request, "monitoramento/diagnosticos.html", context)
 
 
 @login_required
+@gestor_required
 def indicadores_view(request):
     context = _base_context(request, "indicadores")
     cliente = context["cliente_atual"]
@@ -1352,13 +1379,22 @@ def indicadores_view(request):
             "indicadores": indicadores,
             "indicador_alvo_modal": indicador_alvo_modal,
             "indicador_edicao_form": IndicadorForm(instance=indicador_alvo_modal) if indicador_alvo_modal else IndicadorForm(),
-            "historicos_indicadores": IndicadorHistoricoMensal.objects.filter(indicador__in=indicadores[:8])[:12],
+            "historicos_indicadores": IndicadorHistoricoMensal.objects.filter(indicador__in=indicadores).order_by("-competencia")[:12],
+            "competencia_label": _formatar_competencia(timezone.localdate().replace(day=1)),
         }
     )
+    for item in indicadores:
+        item.resultado_mes = _snapshot_indicador_por_registros(item, timezone.localdate().replace(day=1))
+    if request.method == "POST":
+        context["modal"] = request.POST.get("form_name")
+        if "indicador_edicao_form" in locals() and not indicador_edicao_form.is_valid():
+            context["indicador_edicao_form"] = indicador_edicao_form
+            context["indicador_alvo_modal"] = indicador_obj
     return render(request, "monitoramento/indicadores.html", context)
 
 
 @login_required
+@gestor_required
 def acoes_view(request):
     context = _base_context(request, "acoes")
     cliente = context["cliente_atual"]
@@ -1551,7 +1587,6 @@ def acoes_view(request):
             "indicador_percentual_competencia": indicador_snapshot["percentual"],
             "acoes": acoes,
             "acoes_lista": acoes_lista,
-            "periodo_fechado": competencia < timezone.localdate().replace(day=1),
             "periodo_futuro": competencia > timezone.localdate().replace(day=1),
             "acao_alvo_modal": acao_alvo_modal,
             "atribuicoes_acao": AcaoAtribuicao.objects.filter(acao=acao_alvo_modal).prefetch_related("distribuicoes__funcionario__user") if acao_alvo_modal else AcaoAtribuicao.objects.none(),
@@ -1559,17 +1594,20 @@ def acoes_view(request):
             "equipes_rateio_data": equipes_rateio_data,
         }
     )
+    if request.method == "POST":
+        context["modal"] = "nova_acao" if request.POST.get("form_name") == "nova_acao" else "atribuir_acao"
     return render(request, "monitoramento/acoes.html", context)
 
 
 @login_required
+@gestor_required
 def equipes_view(request):
     context = _base_context(request, "equipes")
     cliente = context["cliente_atual"]
     equipes = Equipe.objects.filter(cliente=cliente).annotate(total_funcionarios=Count("funcionarios")) if cliente else Equipe.objects.none()
     equipe_id = request.GET.get("equipe")
     equipe = equipes.filter(pk=equipe_id).first() or equipes.first()
-    profissionais = Funcionario.objects.filter(equipe=equipe) if equipe else Funcionario.objects.none()
+    profissionais = Funcionario.objects.filter(equipe=equipe).select_related("user").annotate(total_tarefas=Count("tarefas")) if equipe else Funcionario.objects.none()
     if request.method == "POST" and cliente:
         if request.POST.get("form_name") == "nova_equipe":
             equipe_form = EquipeForm(request.POST)
@@ -1599,15 +1637,20 @@ def equipes_view(request):
         context["equipe_form"] = EquipeForm()
         context["profissional_form"] = ProfissionalForm()
     context.update({"equipes": equipes, "equipe_selecionada": equipe, "profissionais": profissionais})
+    if request.method == "POST":
+        context["modal"] = request.POST.get("form_name")
+        if not equipe and context["modal"] == "novo_profissional":
+            profissional_form.add_error(None, "Cadastre e selecione uma equipe antes de adicionar profissionais.")
     return render(request, "monitoramento/equipes.html", context)
 
 
 @login_required
+@gestor_required
 def profissionais_view(request):
     context = _base_context(request, "profissionais")
     cliente = context["cliente_atual"]
     termo = request.GET.get("q", "").strip()
-    profissionais = Funcionario.objects.filter(cliente=cliente) if cliente else Funcionario.objects.none()
+    profissionais = Funcionario.objects.filter(cliente=cliente).select_related("user", "equipe").annotate(total_lancamentos=Count("registros")) if cliente else Funcionario.objects.none()
     if termo:
         profissionais = profissionais.filter(
             models.Q(user__first_name__icontains=termo)

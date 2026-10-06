@@ -2,22 +2,22 @@
 
 {% block title %}App - Alertas{% endblock %}
 {% block worker_title %}Alertas{% endblock %}
-{% block worker_subtitle %}Itens pendentes, atrasados ou que exigem atencao{% endblock %}
+{% block worker_subtitle %}Lembretes das suas metas em andamento e dos prazos vencidos{% endblock %}
 
 {% block worker_content %}
 <section class="worker-card">
     <div class="worker-card-header">
-        <h2>Novos Alertas</h2>
+        <h2>Acompanhamento do mês</h2>
         <span>{{ alertas_tarefas|length }} itens</span>
     </div>
     <div class="worker-task-list">
-        {% for tipo, tarefa in alertas_tarefas %}
+        {% for tarefa in alertas_tarefas %}
             <article class="worker-alert-item">
-                <strong>{% if tipo == 'atrasada' %}Atenção{% else %}Lembrete{% endif %}</strong>
+                <strong>{% if tarefa.atrasada %}Prazo vencido{% else %}Meta em andamento{% endif %}</strong>
                 <span>{{ tarefa.titulo }}</span>
                 <small>
-                    Meta {{ tarefa.meta_quantidade }} | Realizado {{ tarefa.realizado_total }}
-                    {% if tarefa.prazo %}| Prazo {{ tarefa.prazo|date:"d/m/Y" }}{% endif %}
+                    {{ competencia_label }} · Meta: {{ tarefa.meta|floatformat:2 }} · Realizado no mês: {{ tarefa.realizado|floatformat:2 }} {{ tarefa.unidade }}
+                    {% if tarefa.obj.prazo %}| Prazo {{ tarefa.obj.prazo|date:"d/m/Y" }}{% endif %}
                 </small>
             </article>
         {% empty %}
